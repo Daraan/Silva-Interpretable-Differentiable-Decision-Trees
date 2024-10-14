@@ -44,7 +44,7 @@ def search_for_good_model(env):
                         reward, replay_buffer = micro_episode(None, policy_agent, env)
                     except Exception as e:
                         continue
-                if env in ['cart', 'lunar']:
+                elif env in ['cart', 'lunar']:
                     reward, replay_buffer = gym_episode(None, policy_agent, env)
                 master_states.extend(replay_buffer['states'])
                 reward_after_five.append(reward)
@@ -61,7 +61,7 @@ def search_for_good_model(env):
                     except Exception as e:
                         crispy_out = -3
                         continue
-                if env in ['cart', 'lunar']:
+                elif env in ['cart', 'lunar']:
                     crispy_out, replay_buffer = gym_episode(None, policy_agent, env)
 
                 crispy_reward.append(crispy_out)
@@ -80,7 +80,7 @@ def search_for_good_model(env):
     return best_fuzzy_fn, best_fn, max_fuzzy_reward, max_fuzzy_std, max_reward, max_std, all_results
 
 
-def run_a_model(fn, args_in, seed=None):
+def run_a_model(fn, args_in, seed=0):
     num_runs = 15
     if 'cart' in fn:
         env = 'cart'
@@ -108,7 +108,7 @@ def run_a_model(fn, args_in, seed=None):
     for _ in range(num_runs):
         if env == 'FindAndDefeatZerglings':
             reward, replay_buffer = micro_episode(None, policy_agent, game_mode=env)
-        if env in ['cart', 'lunar']:
+        elif env in ['cart', 'lunar']:
             reward, replay_buffer = gym_episode(None, policy_agent, env)
         master_states.extend(replay_buffer['states'])
         master_actions.extend(replay_buffer['actions_taken'])
