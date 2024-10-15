@@ -1,9 +1,12 @@
 from pathlib import Path
+import re
+from ._agent_interface import AgentBase
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
 from interpretable_ddts.opt_helpers import replay_buffer, ppo_update
 import copy
+from typing import Union, Optional
 
 
 class BaselineFCNet(nn.Module):
@@ -33,14 +36,24 @@ class BaselineFCNet(nn.Module):
             return self.softmax(act_out)
 
 
-class MLPAgent:
-    def __init__(self,
-                 bot_name='MLPAgent',
-                 input_dim=4,
-                 output_dim=2,
-                 num_hidden=1
-                 ):
-        self.bot_name = bot_name + str(num_hidden) + '_hid'
+class MLPAgent(AgentBase):
+    def __init__(
+        self,
+        bot_name="MLPAgent",
+        input_dim=4,
+        output_dim=2,
+        num_hidden=1,
+        version: Optional[int] = None,
+        _duplicate=False,
+    ):
+        self.bot_name = bot_name + "_" + str(num_hidden) + '_hid'
+        self._duplicate = _duplicate   
+        self.rewards_file = None   
+        self._version = None
+        if version is None:
+            self._check_version()
+        else:
+            self.version = version
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.num_hidden = num_hidden
@@ -108,21 +121,42 @@ class MLPAgent:
     def end_episode(self, timesteps):
         self.reward_history.append(timesteps)
         value_loss, action_loss = self.ppo.batch_updates(self.replay_buffer, self)
-        txts_path = Path('../txts')
-        txts_path.mkdir(parents=True, exist_ok=True)
-        rewards_file = txts_path / (self.bot_name + '_rewards.txt')
+        if self.rewards_file is None:
+            txts_path = Path('../txts')
+            txts_path.mkdir(parents=True, exist_ok=True)
+            if self.version is None:
+                rewards_file = txts_path / (
+                    self.bot_name + "_0_rewards.txt"
+                )
+                if not rewards_file.exists():
+                    self.version = 0
+                else:
+                    stem = rewards_file.with_name(rewards_file.stem) # remove the _rewards.txt
+                    match = re.match(
+                        r"(?P<name>.+)_v(?P<number>\d+)'_rewards.txt'$", str(stem)
+                    )
+                    if match:
+                        d = int(match.groupdict()["number"]) + 1
+                    else:
+                        d = 1
+                    self.version = d
+            rewards_file = txts_path / (self.bot_name + f"_v{self.version}" + "_rewards.txt")
+            self.rewards_file = rewards_file
+        self.rewards_file.open("a").write(str(timesteps) + "\n")
         self.num_steps += 1
-        rewards_file.open("a").write(str(timesteps) + "\n")
 
     def reset(self):
         self.replay_buffer.clear()
 
 
-    def save(self, fn='last'):
+    def save(self, fn: Union[Path, str]='last'):
+        assert self.version is not None
         checkpoint = dict()
         checkpoint['actor'] = self.action_network.state_dict()
         checkpoint['value'] = self.value_network.state_dict()
-        torch.save(checkpoint, str(fn)+self.bot_name+'.pth.tar')
+        save_path = Path(str(fn))
+        save_path = save_path.with_name(save_path.name + self.bot_name + f"_v{self.version}" + ".pth.tar")
+        torch.save(checkpoint, save_path)
 
     def load(self, fn='last'):
         # fn = fn + self.bot_name + '.pth.tar'
@@ -153,10 +187,12 @@ class MLPAgent:
 
     def duplicate(self):
         new_agent = MLPAgent(
-            bot_name=self.bot_name,
+            bot_name=self.bot_name.rstrip('_'),
             input_dim=self.input_dim,
             output_dim=self.output_dim,
-            num_hidden=self.num_hidden
-                 )
+            num_hidden=self.num_hidden,
+            version=self.version,
+            _duplicate=True
+            )
         new_agent.__setstate__(self.__getstate__())
         return new_agent

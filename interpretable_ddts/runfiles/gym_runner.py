@@ -57,8 +57,10 @@ def run_episode(q, agent_in, ENV_NAME, seed=0):
 def main(episodes, agent, ENV_NAME):
     running_reward_array = []
     models_path = Path('../models')
+    rewards_path = Path('../txts')
     models_path.mkdir(parents=True, exist_ok=True)
-    for episode in range(episodes):
+    rewards_path.mkdir(parents=True, exist_ok=True)
+    
         reward = 0
         returned_object = run_episode(None, agent_in=agent, ENV_NAME=ENV_NAME)
         reward += returned_object[0]
