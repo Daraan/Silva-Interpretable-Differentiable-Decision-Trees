@@ -1,10 +1,13 @@
 # Created by Andrew Silva on 8/28/19
 import torch
 from torch.distributions import Categorical
+from ._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt import DDT
 from interpretable_ddts.opt_helpers import replay_buffer, ppo_update
 import os
 import numpy as np
+from typing import Optional, Union
+from pathlib import Path
 
 
 def save_ddt(fn, model):
@@ -47,27 +50,40 @@ def init_rule_list(num_rules, dim_in, dim_out):
     return weights, comparators, leaves
 
 
-class DDTAgent:
-    def __init__(self,
-                 bot_name='DDT',
-                 input_dim=4,
-                 output_dim=2,
-                 rule_list=False,
-                 num_rules=4):
+class DDTAgent(AgentBase):
+    def __init__(
+        self,
+        bot_name="DDT",
+        input_dim=4,
+        output_dim=2,
+        rule_list=False,
+        num_rules=4,
+        version: Optional[int] = None,
+        _duplicate=False,
+    ):
+        self._duplicate = _duplicate
         self.replay_buffer = replay_buffer.ReplayBufferSingleAgent()
-        self.bot_name = bot_name
+        self.bot_name = bot_name + '_'
         self.rule_list = rule_list
         self.output_dim = output_dim
         self.input_dim = input_dim
         self.num_rules = num_rules
         if rule_list:
-            self.bot_name += str(num_rules)+'_rules'
+            if str(num_rules) + '_rules' not in self.bot_name:
+                self.bot_name += str(num_rules)+'_rules'
             init_weights, init_comparators, init_leaves = init_rule_list(num_rules, input_dim, output_dim)
         else:
             init_weights = None
             init_comparators = None
             init_leaves = num_rules
-            self.bot_name += str(num_rules) + '_leaves'
+            if str(num_rules) + '_leaves' not in self.bot_name:
+                self.bot_name += str(num_rules) + '_leaves'
+        self.rewards_file = None
+        self._version = None
+        if version is None:
+            self._check_version()
+        else:
+            self.version = version
         self.action_network = DDT(input_dim=input_dim,
                                   output_dim=output_dim,
                                   weights=init_weights,
@@ -139,25 +155,30 @@ class DDTAgent:
         return True
 
     def end_episode(self, reward):
+        assert self.version is not None
         value_loss, action_loss = self.ppo.batch_updates(self.replay_buffer, self)
-        self.num_steps += 1
-        bot_name = '../txts/' + self.bot_name
-        with open(bot_name + '_rewards.txt', 'a') as myfile:
-            myfile.write(str(reward) + '\n')
+        if self.rewards_file is None:
+            txts_path = Path('../txts')
+            txts_path.mkdir(parents=True, exist_ok=True)
+            self.rewards_file = txts_path / (self.bot_name + f"_v{self.version}" + "_rewards.txt")
+        self.rewards_file.open("a").write(str(reward) + "\n")
+        self.num_steps += 1  
 
     def reset(self):
         self.replay_buffer.clear()
 
-    def save(self, fn='last'):
-        act_fn = str(fn) + self.bot_name + '_actor_' + '.pth.tar'
-        val_fn = str(fn) + self.bot_name + '_critic_' + '.pth.tar'
+    def save(self, fn: Union[Path, str]='last'):
+        assert self.version is not None
+        act_fn = str(fn) + self.bot_name + '_actor' + f'_v{self.version}.pth.tar'
+        val_fn = str(fn) + self.bot_name + "_critic" + f"_v{self.version}.pth.tar"
 
         save_ddt(act_fn, self.action_network)
         save_ddt(val_fn, self.value_network)
 
-    def load(self, fn='last'):
-        act_fn = str(fn) + self.bot_name + '_actor_' + '.pth.tar'
-        val_fn = str(fn) + self.bot_name + '_critic_' + '.pth.tar'
+    def load(self, fn='last', version=None):
+        assert version
+        act_fn = str(fn) + self.bot_name + '_actor' + f'_v{version}.pth.tar'
+        val_fn = str(fn) + self.bot_name + '_critic' + f'_v{version}.pth.tar'
 
         if os.path.exists(act_fn):
             self.action_network = load_ddt(act_fn)
@@ -180,11 +201,13 @@ class DDTAgent:
             setattr(self, key, state[key])
 
     def duplicate(self):
-        new_agent = DDTAgent(bot_name=self.bot_name,
+        new_agent = DDTAgent(bot_name=self.bot_name.rstrip('_'),
                              input_dim=self.input_dim,
                              output_dim=self.output_dim,
                              rule_list=self.rule_list,
-                             num_rules=self.num_rules
+                             num_rules=self.num_rules,
+                             version=self.version,
+                             _duplicate=True
                              )
         new_agent.__setstate__(self.__getstate__())
         return new_agent
