@@ -126,6 +126,7 @@ def search_for_good_model(env):
             "episode",
         ],
     )
+    results_df.sort_values("discrete_reward", ascending=False, inplace=True)
     
     best_fuzzy_arg: int = results_df.fuzzy_reward.argmax()  # type: ignore
     best_arg: int = results_df.discrete_reward.argmax()  # type: ignore
@@ -166,8 +167,7 @@ def best_model_from_data(results: pd.DataFrame):
         max_std,
     )
 
-
-def run_a_model(fn, args_in, seed: Optional[int]=0, verbose=False):
+def run_a_model(fn, args_in, seed: Optional[int]=0, verbose:int=1):
     num_runs = 15
     if 'cart' in fn:
         env = 'cart'
@@ -200,7 +200,8 @@ def run_a_model(fn, args_in, seed: Optional[int]=0, verbose=False):
         master_states.extend(replay_buffer['states'])
         master_actions.extend(replay_buffer['actions_taken'])
         reward_after_five += reward
-    print(f"Average reward after {num_runs} runs is {reward_after_five/num_runs:.3f}")
+    if verbose:
+        print(f"Average reward after {num_runs} runs is {reward_after_five/num_runs:.3f}")
 
     master_states = torch.cat([state[0] for state in master_states], dim=0)
     if args_in.discretize:
@@ -223,8 +224,8 @@ def run_a_model(fn, args_in, seed: Optional[int]=0, verbose=False):
                            alpha=99999.,
                            is_value=False,
                            use_gpu=False)
-
-    print("\n-------------------\nCrispy:\n")
+    if verbose:
+        print("-----------\nCrispy:\n")
 
     policy_agent.action_network = crispy_actor
     crispy_reward = []
@@ -242,15 +243,15 @@ def run_a_model(fn, args_in, seed: Optional[int]=0, verbose=False):
     leaves = crispy_actor.leaf_init_information
     for leaf_ind in range(len(leaves)):
         leaves[leaf_ind][-1] = np.argmax(leaves[leaf_ind][-1])
-    if verbose:
+    if verbose > 1:
         print(leaves)
         print(crispy_actor.comparators.detach().numpy().reshape(-1))
         ddt_weights = crispy_actor.layers.detach().numpy()
         print(np.argmax(np.abs(ddt_weights), axis=1))
-
-    print(f"Average reward after {num_runs} runs is {reward_after_five/num_runs:.3f}\n"
-          f"Average reward for the crispy network after {num_runs} runs is {np.mean(crispy_reward)} with std {np.std(crispy_reward):.3f}"
-    )
+    if verbose:
+        print(f"Average reward after {num_runs} runs is {reward_after_five/num_runs:.3f}\n"
+            f"Average reward for the crispy network after {num_runs} runs is {np.mean(crispy_reward)} with std {np.std(crispy_reward):.3f}"
+        )
     return reward_after_five/num_runs, np.mean(crispy_reward), np.std(crispy_reward)
 
 
@@ -258,6 +259,29 @@ def fc_state_dict(fn=''):
     fc_model = torch.load(fn)
     print(fc_model['actor'])
 
+def test_model(discrete_fn, seed=None, verbose:int=True):
+    """Allows parallel execution of run_a_model"""
+    if verbose:
+        print("\n------------------\nTesting", discrete_fn)
+    else:
+        print(".", end="", flush=True)
+    (
+        avg_reward_diff, 
+        avg_reward_discrete, 
+        std_reward_discrete
+    ) = run_a_model(discrete_fn, args, seed=seed, verbose=verbose)
+    header = RE_PARSE_FILENAME.match(discrete_fn).groupdict()
+    index = (
+        header["env"],
+        header["method"],
+        header["typ"],
+        int(header["num"]),
+        bool(header["GPU"]),
+        int(header["version"]),
+        int(header["episode"]),
+    )
+    return (index, (avg_reward_diff, avg_reward_discrete, std_reward_discrete))
+    
 
 if __name__ == "__main__":
     import argparse
@@ -271,9 +295,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "-s", "--seed", help="Seed; use -1 for None", type=int, default=12496
     )
+    parser.add_argument(
+        "-a", "--all", help="Test all models; not only the best", action="store_true", default=False
+    )
     args = parser.parse_args()
     if args.seed == -1:
         args.seed = None
+    SEED = args.seed
 
     envir = args.env_type
     model_dir = args.model_dir
@@ -288,8 +316,10 @@ if __name__ == "__main__":
         ) = search_for_good_model(envir)
         results_df.to_csv(f"../outputs/results_{envir}.csv")
     else:
+        # reuse saved data
         results_df = (pd.read_csv(f"../outputs/results_{envir}.csv")
                       .set_index(["env", "method", "sub-method", "capacity", "GPU", "version", "episode"], drop=True))
+    # Query df which is the best model
     best_disc_models = {}
     for sub_method in ["leaves", "rules"]:
         sub_df = results_df[
@@ -315,37 +345,31 @@ if __name__ == "__main__":
         # preselected or best
         if args.model_fn:
             models = [args.model_fn]
-        else:
+        elif args.all:
+            models = results_df[
+                results_df.discrete_reward >= results_df.discrete_reward.quantile(0.5)
+            ].fn.values
+        else:  # only best
             models = best_disc_models.values()
         # cartpole random seeds include: [11421, 12494, 12495, 12496,
         # 30867, 30868, 30869, 30870, 30871, 30872, 34662, 38979, 38980, 45603, 45604, 45605, 45606, 46760, 46761,
         # 50266, 50267, 54857, 65926, 70614, 79986, 79987, 79988, 79989]
         best_results = []
-        for discrete_fn in models:
-            print("\n\n-------------------\nTesting", discrete_fn)
-            (
-                avg_reward_diff, 
-                avg_reward_discrete, 
-                std_reward_discrete
-            ) = run_a_model(discrete_fn, args, seed=args.seed)
-            header = RE_PARSE_FILENAME.match(discrete_fn).groupdict()
-            index = (
-                header["env"],
-                header["method"],
-                header["typ"],
-                int(header["num"]),
-                bool(header["GPU"]),
-                int(header["version"]),
-                int(header["episode"]),
-            )
+        if args.all:  # execute parallel
+            eval_functions = [
+                delayed(test_model)(discrete_fn, SEED, False) for discrete_fn in models
+            ]
+            results = Parallel(n_jobs=25)(eval_functions)
+            print("\n")
+        else:
+            results = [test_model(discrete_fn) for discrete_fn in models]
+        for (index, (avg_reward_diff, avg_reward_discrete, std_reward_discrete)) in results:
             results_df.loc[index, "test_diff_reward"] = round(avg_reward_diff, 3)
             results_df.loc[index, "test_disc_reward"] = round(avg_reward_discrete, 3)
             results_df.loc[index, "test_disc_std"] = round(std_reward_discrete, 3)
-            results_df.to_csv(f"../outputs/results_{envir}.csv")
             best_results.append(index)
-        print("\nBest results:\n", results_df.loc[best_results, ["fn", "test_diff_reward", "test_disc_reward", "test_disc_std"]])
-
-#Best results:
-#                                      fn  test_diff_reward  test_disc_reward  test_disc_std
-# 500thddtlunar_8_leaves_actor_v1.pth.tar           -287.673          -159.090         85.914
-# 1000thddtlunar_32_rules_actor_v2.pth.tar          -141.296          -144.496         40.518
+        results_df.to_csv(f"../outputs/results_{envir}.csv")
+        if args.all:
+            print("\nAll results:\n", results_df[["fn", "test_diff_reward", "test_disc_reward", "test_disc_std"]].sort_values("test_disc_reward", ascending=False))
+        else:
+            print("\nBest results:\n", results_df.loc[best_results, ["fn", "test_diff_reward", "test_disc_reward", "test_disc_std"]])
