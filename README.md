@@ -14,6 +14,7 @@ Unfortunately, one of the requirements is now out-dated, so you must use the ver
 #### Troubleshooting
 
 If you face issues when creating an environment it could be linked to `box2d-py`. To install, run one of the following commands:
+
 ```shell
 $ pip install gym[box2d]==0.17.2
 # if this fails, try
