@@ -50,13 +50,13 @@ class MLPAgent(AgentBase):
         self._duplicate = _duplicate   
         self.rewards_file = None   
         self._version = None
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.num_hidden = num_hidden
         if version is None:
             self._check_version()
         else:
             self.version = version
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.num_hidden = num_hidden
         self.replay_buffer = replay_buffer.ReplayBufferSingleAgent()
         self.action_network = BaselineFCNet(input_dim=input_dim,
                                             output_dim=output_dim,
