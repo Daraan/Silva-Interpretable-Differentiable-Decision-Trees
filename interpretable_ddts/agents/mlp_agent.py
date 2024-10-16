@@ -184,6 +184,22 @@ class MLPAgent(AgentBase):
         self.actor_opt = copy.deepcopy(state['actor_opt'])
         self.value_opt = copy.deepcopy(state['value_opt'])
         self.num_hidden = copy.deepcopy(state['num_hidden'])
+        
+    def _write_hparams(self):
+        self.rewards_file.open("w").write(
+            ", ".join(
+                [
+                    f"name: {self.bot_name}",
+                    "method: mlp",
+                    f"version: {self.version}",
+                    f"input_dim: {self.input_dim}",
+                    f"output_dim: {self.output_dim}",
+                    f"num_hidden: {self.num_hidden}",
+                    "rule_list: False",
+                ]
+            )
+            + "\n"
+        )
 
     def duplicate(self):
         new_agent = MLPAgent(

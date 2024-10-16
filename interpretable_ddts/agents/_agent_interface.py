@@ -20,6 +20,9 @@ class AgentBase:
             self.version = 0
         return self.version
 
+    def _write_hparams(self):
+        raise NotImplementedError
+
     @property
     def version(self):
         return self._version
@@ -38,8 +41,9 @@ class AgentBase:
         rewards_file = txts_path / (
             self.bot_name + f"_v{self.version}" + "_rewards.txt"
         )
-        rewards_file.open("w")
         self.rewards_file = rewards_file
+        self._write_hparams()
+        self.rewards_file.open("a")
     
     def duplicate(self):
         raise NotImplementedError

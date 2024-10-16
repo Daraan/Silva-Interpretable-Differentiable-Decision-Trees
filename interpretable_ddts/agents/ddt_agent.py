@@ -200,6 +200,17 @@ class DDTAgent(AgentBase):
         for key in state:
             setattr(self, key, state[key])
 
+    def _write_hparams(self):
+        self.rewards_file.open("w").write(", ".join([
+            f"name: {self.bot_name}",
+            "method: ddt",
+            f"version: {self.version}",
+            f"input_dim: {self.input_dim}",
+            f"output_dim: {self.output_dim}",
+            f"num_rules: {self.num_rules}",
+            f"rule_list: {self.rule_list}",
+        ]) + "\n")
+
     def duplicate(self):
         new_agent = DDTAgent(bot_name=self.bot_name.rstrip('_'),
                              input_dim=self.input_dim,
