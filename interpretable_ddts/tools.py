@@ -5,7 +5,9 @@ from pathlib import Path
 import re
 from typing import Iterable, Union
 import pandas as pd
-
+import random
+import numpy as np
+import torch
 
 RE_PARSE_FILENAME = re.compile(
     r"(?P<parent_dir>.+?/)?"  # likely for model files
@@ -34,6 +36,23 @@ def match_filename(filename: Union[str, Path]) -> "re.Match[str] | None":
     if result is None:
         result = RE_PARSE_FILENAME_OLD.match(filename)
     return result
+
+def seed_everything(env, seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    # os.environ["PYTHONHASHSEED"] = str(seed)
+    if seed is None:
+        torch.seed()
+        torch.cuda.seed()
+    else:
+        torch.manual_seed(
+            seed
+        )  # setting torch manual seed causes bad models, # ok seed 124
+        torch.cuda.manual_seed_all(seed)
+    # torch.backends.cudnn.deterministic = True
+    if env:
+        env.seed(seed)
+        env.action_space.seed(seed)
 
 def create_df_index(metadata: Iterable[dict[str, str]]):
     return pd.MultiIndex.from_tuples(

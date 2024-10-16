@@ -1,9 +1,10 @@
 # Created by Andrew Silva on 8/28/19
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 import gym
 import numpy as np
 import torch
+from interpretable_ddts.agents._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt_agent import DDTAgent
 from interpretable_ddts.agents.mlp_agent import MLPAgent
 from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
@@ -12,11 +13,11 @@ import time
 import torch.multiprocessing as mp
 import argparse
 import copy
-import random
 from tqdm import tqdm
 
+from interpretable_ddts.tools import seed_everything
 
-def run_episode(q, agent_in, ENV_NAME, seed=0):
+def run_episode(q, agent_in: AgentBase, ENV_NAME, seed: Optional[int]=0):
     agent = agent_in.duplicate()
     if ENV_NAME == 'lunar':
         env = gym.make('LunarLander-v2')
@@ -24,19 +25,13 @@ def run_episode(q, agent_in, ENV_NAME, seed=0):
         env = gym.make('CartPole-v1')
     else:
         raise Exception('No valid environment selected')
-    done = False
-    torch.manual_seed(seed)
-    # env.reset(seed=seed)  # set on fork
-    env.seed(seed)
-    np.random.seed(seed)
-    env.action_space.seed(seed)
-    random.seed(seed)
-    
+    seed_everything(env, seed)
     # docstring: returns an initial observation.
     # If the environment already has a random number generator and reset is called with seed=None, the RNG should not be reset.
     # Moreover, reset should (in the typical use case) be called with an integer seed right after initialization and then never again.
     state = env.reset()  # Reset environment and record the starting state
 
+    done = False
     while not done:
         action = agent.get_action(state)
         # Step through environment using chosen action
@@ -107,11 +102,15 @@ if __name__ == "__main__":
     parser.add_argument("-env", "--env_type", help="environment to run on", type=str, default='cart')
     parser.add_argument("-gpu", "--gpu", help="run on GPU?", action='store_true')
     parser.add_argument("-r", "--rule_list", help="Use rule list setup", action='store_true', default=False)
-    parser.add_argument("-s", "--seed", help="Seed", default=False)
+    parser.add_argument("-s", "--seed", help="Seed", default=-1, type=int)
     parser.add_argument("-np", "--not_parallel", help="Do not run in parallel", action='store_true', default=False)
     parser.add_argument("-p", "--process_number", help="Process number", type=int, default=0)
 
     args = parser.parse_args()
+    if args.seed == -1:
+        args.seed = None
+    SEED = args.seed
+    
     AGENT_TYPE = args.agent_type  # 'ddt', 'mlp'
     NUM_EPS = args.episodes  # num episodes Default 1000
     ENV_TYPE = args.env_type  # 'cart' or 'lunar' Default 'cart'
@@ -127,12 +126,14 @@ if __name__ == "__main__":
     else:
         raise Exception('No valid environment selected')
 
-    print(f"Agent {AGENT_TYPE} on {ENV_TYPE} ")
+    print(f"Agent {AGENT_TYPE} on {ENV_TYPE} seed {SEED}")
     # mp.set_start_method('spawn')
     mp.set_sharing_strategy('file_system')
     def start_process(i):
         if i > 0:  # delay the start for file existence checks
             time.sleep(i/2)
+        # Initialize with different seed
+        seed_everything(None, SEED + i if SEED is not None else None)
         bot_name = AGENT_TYPE + ENV_TYPE
         if USE_GPU:
             bot_name += 'GPU'
@@ -157,7 +158,7 @@ if __name__ == "__main__":
             position=i + (args.process_number % 5) * 5,
             postfix="Process " + str(i + (args.process_number * 5)),
         )
-        reward_array = main(NUM_EPS, policy_agent, ENV_TYPE, pbar=pbar)
+        reward_array = main(NUM_EPS, policy_agent, ENV_TYPE, seed=SEED, pbar=pbar)
         return reward_array
     if not args.not_parallel:
         data = Parallel(n_jobs=5, pre_dispatch="all")(
