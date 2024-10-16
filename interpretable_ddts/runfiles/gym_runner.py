@@ -61,10 +61,12 @@ def run_episode(q, agent_in: AgentBase, ENV_NAME, seed: Optional[int]=0):
 
 def main(episodes, agent: Union[DDTAgent, MLPAgent], ENV_NAME, seed=None, pbar=None):
     running_reward_array = []
-    models_path = Path('../models')
+    models_path = Path("../models") / (agent.bot_name + f"_v{agent.version}")
     rewards_path = Path('../txts')
     models_path.mkdir(parents=True, exist_ok=True)
     rewards_path.mkdir(parents=True, exist_ok=True)
+    # Create a link to the rewards file
+    (models_path / agent.rewards_file.name).symlink_to(agent.rewards_file.resolve())
     
     if pbar is None:
         print("Running agent ", agent.bot_name, " version ", agent.version)
