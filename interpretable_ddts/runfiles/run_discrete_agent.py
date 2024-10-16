@@ -1,6 +1,7 @@
 # Created by Andrew Silva on 5/10/19
+from pathlib import Path
 import re
-from typing import Callable, NamedTuple, Optional
+from typing import NamedTuple, Optional
 from joblib import Parallel, delayed
 import pandas as pd
 import torch
@@ -15,6 +16,7 @@ from interpretable_ddts.opt_helpers.sklearn_to_ddt import ddt_init_from_dt
 import matplotlib.pyplot as plt
 from interpretable_ddts.runfiles.sc2_minigame_runner import run_episode as micro_episode
 from interpretable_ddts.runfiles.gym_runner import run_episode as gym_episode
+from interpretable_ddts.tools import RE_PARSE_FILENAME_OLD, create_df_index, match_filename
 
 RE_PARSE_FILENAME = re.compile(
     r"(?P<parent_dir>.+?/)?"
@@ -34,10 +36,10 @@ class Result(NamedTuple):
     discrete_reward_std: float  # np.std(crispy_reward)
 
 
-def evaluate_model(fn, env) -> Result:
+def evaluate_model(fn, env, verbose=1) -> Result:
     num_runs = 15
     
-    final_deep_actor_fn = os.path.join(model_dir, fn)
+    final_deep_actor_fn = os.path.join(MODEL_DIR, fn)
     fda = load_ddt(final_deep_actor_fn)
 
     policy_agent = DDTAgent(bot_name='crispytester',
@@ -77,13 +79,16 @@ def evaluate_model(fn, env) -> Result:
             crispy_out, replay_buffer = gym_episode(None, policy_agent, env)
 
         crispy_reward.append(crispy_out)
-    print(f"FN = {fn}\n"
-          f"Average reward after 5 runs is {np.mean(reward_after_five):.3f}\n"
-          f"Average reward for the crispy network after {num_runs} runs is {np.mean(crispy_reward):.3f}\n"
-    )
+    if verbose:
+        print(f"FN = {fn}\n"
+            f"Average reward after 5 runs is {np.mean(reward_after_five):.3f}\n"
+            f"Average reward for the crispy network after {num_runs} runs is {np.mean(crispy_reward):.3f}\n"
+        )
+    else:
+        print(".", end="", flush=True)
     return Result(fn, np.mean(reward_after_five), np.std(reward_after_five), np.mean(crispy_reward), np.std(crispy_reward))
 
-def search_for_good_model(env):
+def search_for_good_model(env, verbose=1):
     # Be sure to comment out gym_runner.gym_episode env.render
     max_reward = -float("inf")
     max_std = -float("inf")
@@ -94,38 +99,21 @@ def search_for_good_model(env):
     all_results = []
     delayed_functions = []
     files = []
-    for fn in os.listdir(model_dir):
+    for fn in os.listdir(MODEL_DIR):
         if env in fn and 'actor' in fn and 'ddt' in fn:
-            delayed_functions.append(delayed(evaluate_model)(fn, env))
+            delayed_functions.append(delayed(evaluate_model)(fn, env, verbose))
             files.append(fn)
     del fn
 
     all_results: "list[Result]" = Parallel(n_jobs=25)(delayed_functions)
-    metadata = [RE_PARSE_FILENAME.match(file).groupdict() for file in files]
+    if not verbose:
+        print("\n")
+    metadata = [
+        (RE_PARSE_FILENAME.match(file) or RE_PARSE_FILENAME_OLD.match(file)).groupdict()
+        for file in files
+    ]
     results_df = pd.DataFrame(all_results)
-    results_df.index = pd.MultiIndex.from_tuples(
-        tuples=[
-            (
-                header["env"],
-                header["method"],
-                header["typ"],
-                int(header["num"]),
-                bool(header["GPU"]),
-                int(header["version"]),
-                int(header["episode"]),
-            )
-            for header in metadata
-        ],
-        names=[
-            "env",
-            "method",
-            "sub-method",
-            "capacity",
-            "GPU",
-            "version",
-            "episode",
-        ],
-    )
+    results_df.index = create_df_index(metadata)
     results_df.sort_values("discrete_reward", ascending=False, inplace=True)
     
     best_fuzzy_arg: int = results_df.fuzzy_reward.argmax()  # type: ignore
@@ -175,8 +163,8 @@ def run_a_model(fn, args_in, seed: Optional[int]=0, verbose:int=1):
         env = 'lunar'
     elif 'FindAndDefeatZerglings' in fn:
         env = 'FindAndDefeatZerglings'
-    final_deep_actor_fn = os.path.join(model_dir, fn) if not fn.startswith(model_dir) else fn
-    final_deep_critic_fn = os.path.join(model_dir, fn) if not fn.startswith(model_dir) else fn
+    final_deep_actor_fn = os.path.join(MODEL_DIR, fn) if not fn.startswith(MODEL_DIR) else fn
+    final_deep_critic_fn = os.path.join(MODEL_DIR, fn) if not fn.startswith(MODEL_DIR) else fn
 
     fda = load_ddt(final_deep_actor_fn)
     fdc = load_ddt(final_deep_critic_fn)
@@ -270,14 +258,16 @@ def test_model(discrete_fn, seed=None, verbose:int=True):
         avg_reward_discrete, 
         std_reward_discrete
     ) = run_a_model(discrete_fn, args, seed=seed, verbose=verbose)
-    header = RE_PARSE_FILENAME.match(discrete_fn).groupdict()
+    header = match_filename(discrete_fn).groupdict()
+    version = header.get("version", 99)
+    version = int(version) if version is not None else 99
     index = (
         header["env"],
         header["method"],
         header["typ"],
         int(header["num"]),
         bool(header["GPU"]),
-        int(header["version"]),
+        version,
         int(header["episode"]),
     )
     return (index, (avg_reward_diff, avg_reward_discrete, std_reward_discrete))
@@ -304,16 +294,14 @@ if __name__ == "__main__":
     SEED = args.seed
 
     envir = args.env_type
-    model_dir = args.model_dir
+    MODEL_DIR = args.model_dir
     # args.run_model = True
     # args.discretize = True
 
     if args.find_model:
         print("\nFinding model...")
-        (
-            *_, 
-            results_df,
-        ) = search_for_good_model(envir)
+        *_, results_df = search_for_good_model(envir, verbose=not args.all)
+        Path("../outputs").mkdir(exist_ok=True)
         results_df.to_csv(f"../outputs/results_{envir}.csv")
     else:
         # reuse saved data
@@ -325,6 +313,8 @@ if __name__ == "__main__":
         sub_df = results_df[
             results_df.index.get_level_values("sub-method") == sub_method
         ]
+        if len(sub_df) == 0:
+            continue
         (
             best_fuzzy_fn,
             best_fn,
@@ -339,16 +329,14 @@ if __name__ == "__main__":
         print(
             f"Best discrete {sub_method} file: {best_fn} with {disc_reward} reward and {disc_std} std"
         )
-        best_disc_models[sub_method] = os.path.join(model_dir, best_fn)
+        best_disc_models[sub_method] = os.path.join(MODEL_DIR, best_fn)
     if args.run_model:
         print("\nRunning model...")
         # preselected or best
         if args.model_fn:
             models = [args.model_fn]
         elif args.all:
-            models = results_df[
-                results_df.discrete_reward >= results_df.discrete_reward.quantile(0.5)
-            ].fn.values
+            models = results_df.fn.values
         else:  # only best
             models = best_disc_models.values()
         # cartpole random seeds include: [11421, 12494, 12495, 12496,
