@@ -59,14 +59,11 @@ class DDTAgent(AgentBase):
         rule_list=False,
         num_rules=4,
         version: Optional[int] = None,
-        _duplicate=False,
+        *, _duplicate=False,
     ):
-        self._duplicate = _duplicate
-        self.replay_buffer = replay_buffer.ReplayBufferSingleAgent()
+        # bot_name before calling super
         self.bot_name = bot_name + '_'
         self.rule_list = rule_list
-        self.output_dim = output_dim
-        self.input_dim = input_dim
         self.num_rules = num_rules
         if rule_list:
             if str(num_rules) + '_rules' not in self.bot_name:
@@ -78,12 +75,9 @@ class DDTAgent(AgentBase):
             init_leaves = num_rules
             if str(num_rules) + '_leaves' not in self.bot_name:
                 self.bot_name += str(num_rules) + '_leaves'
-        self.rewards_file = None
-        self._version = None
-        if version is None:
-            self._check_version()
-        else:
-            self.version = version
+        super().__init__(input_dim, output_dim, _duplicate=_duplicate)
+        
+        self.replay_buffer = replay_buffer.ReplayBufferSingleAgent()
         self.action_network = DDT(input_dim=input_dim,
                                   output_dim=output_dim,
                                   weights=init_weights,
@@ -110,37 +104,12 @@ class DDTAgent(AgentBase):
         self.last_deep_action_probs = None
         self.last_deep_value_pred = [None]*output_dim
         self.full_probs = None
-        self.deeper_full_probs = None
         self.reward_history = []
         self.num_steps = 0
+        self.deeper_full_probs = None
 
-    def get_action(self, observation):
-        with torch.no_grad():
-            obs = torch.Tensor(observation)
-            obs = obs.view(1, -1)
-            self.last_state = obs
-
-            probs = self.action_network(obs)
-            value_pred = self.value_network(obs)
-            probs = probs.view(-1).cpu()
-            self.full_probs = probs
-            if self.action_network.input_dim > 10:
-                probs, inds = torch.topk(probs, 3)
-            m = Categorical(probs)
-            action = m.sample()
-            log_probs = m.log_prob(action)
-            self.last_action_probs = log_probs.cpu()
-            self.last_value_pred = value_pred.view(-1).cpu()
-
-            if self.action_network.input_dim > 10:
-                self.last_action = inds[action].cpu()
-            else:
-                self.last_action = action.cpu()
-        if self.action_network.input_dim > 10:
-            action = inds[action].item()
-        else:
-            action = action.item()
-        return action
+    def get_action(self, observation, max_inputs=10):
+        return super().get_action(observation, max_inputs)
 
     def save_reward(self, reward):
         self.replay_buffer.insert(obs=[self.last_state],
@@ -153,19 +122,6 @@ class DDTAgent(AgentBase):
                                   deeper_full_probs_vector=self.deeper_full_probs,
                                   rewards=reward)
         return True
-
-    def end_episode(self, reward):
-        assert self.version is not None
-        value_loss, action_loss = self.ppo.batch_updates(self.replay_buffer, self)
-        if self.rewards_file is None:
-            txts_path = Path('../txts')
-            txts_path.mkdir(parents=True, exist_ok=True)
-            self.rewards_file = txts_path / (self.bot_name + f"_v{self.version}" + "_rewards.txt")
-        self.rewards_file.open("a").write(str(reward) + "\n")
-        self.num_steps += 1  
-
-    def reset(self):
-        self.replay_buffer.clear()
 
     def save(self, fn: Union[Path, str]='last'):
         assert self.version is not None

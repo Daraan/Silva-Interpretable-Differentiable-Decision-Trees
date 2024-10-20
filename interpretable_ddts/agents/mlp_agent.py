@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 from ._agent_interface import AgentBase
 import torch
 import torch.nn as nn
@@ -18,7 +17,7 @@ class BaselineFCNet(nn.Module):
         self.sig = nn.ReLU()
         self.input_dim = input_dim
         modules = []
-        for h in range(hidden_layers):
+        for _ in range(hidden_layers):
             modules.append(nn.Linear(input_dim, input_dim))
         if len(modules) > 0:
             self.lin2 = nn.Sequential(*modules)
@@ -44,19 +43,12 @@ class MLPAgent(AgentBase):
         output_dim=2,
         num_hidden=1,
         version: Optional[int] = None,
-        _duplicate=False,
+        *, _duplicate=False,
     ):
+        # bot_name before calling super
         self.bot_name = bot_name + "_" + str(num_hidden) + '_hid'
-        self._duplicate = _duplicate   
-        self.rewards_file = None   
-        self._version = None
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.num_hidden = num_hidden
-        if version is None:
-            self._check_version()
-        else:
-            self.version = version
+        super().__init__(input_dim, output_dim, version=version, _duplicate=_duplicate)
+
         self.replay_buffer = replay_buffer.ReplayBufferSingleAgent()
         self.action_network = BaselineFCNet(input_dim=input_dim,
                                             output_dim=output_dim,
@@ -81,29 +73,29 @@ class MLPAgent(AgentBase):
         self.reward_history = []
         self.num_steps = 0
 
-    def get_action(self, observation):
+    def get_action(self, observation, max_inputs=30):
         with torch.no_grad():
             obs = torch.Tensor(observation)
             obs = obs.view(1, -1)
             self.last_state = obs
+
             probs = self.action_network(obs)
             value_pred = self.value_network(obs)
             probs = probs.view(-1)
             self.full_probs = probs
-            if self.action_network.input_dim > 30:
+            if self.action_network.input_dim > max_inputs:
                 probs, inds = torch.topk(probs, 3)
             m = Categorical(probs)
             action = m.sample()
-
             log_probs = m.log_prob(action)
             self.last_action_probs = log_probs
             self.last_value_pred = value_pred.view(-1).cpu()
 
-            if self.action_network.input_dim > 30:
+            if self.action_network.input_dim > max_inputs:
                 self.last_action = inds[action]
             else:
                 self.last_action = action
-        if self.action_network.input_dim > 30:
+        if self.action_network.input_dim > max_inputs:
             action = inds[action].item()
         else:
             action = action.item()
@@ -117,37 +109,6 @@ class MLPAgent(AgentBase):
                                   full_probs_vector=self.full_probs,
                                   rewards=reward)
         return True
-
-    def end_episode(self, timesteps):
-        self.reward_history.append(timesteps)
-        value_loss, action_loss = self.ppo.batch_updates(self.replay_buffer, self)
-        if self.rewards_file is None:
-            txts_path = Path('../txts')
-            txts_path.mkdir(parents=True, exist_ok=True)
-            if self.version is None:
-                rewards_file = txts_path / (
-                    self.bot_name + "_0_rewards.txt"
-                )
-                if not rewards_file.exists():
-                    self.version = 0
-                else:
-                    stem = rewards_file.with_name(rewards_file.stem) # remove the _rewards.txt
-                    match = re.match(
-                        r"(?P<name>.+)_v(?P<number>\d+)'_rewards.txt'$", str(stem)
-                    )
-                    if match:
-                        d = int(match.groupdict()["number"]) + 1
-                    else:
-                        d = 1
-                    self.version = d
-            rewards_file = txts_path / (self.bot_name + f"_v{self.version}" + "_rewards.txt")
-            self.rewards_file = rewards_file
-        self.rewards_file.open("a").write(str(timesteps) + "\n")
-        self.num_steps += 1
-
-    def reset(self):
-        self.replay_buffer.clear()
-
 
     def save(self, fn: Union[Path, str]='last'):
         assert self.version is not None
