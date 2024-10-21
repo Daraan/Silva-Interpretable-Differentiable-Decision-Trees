@@ -70,14 +70,14 @@ def main(episodes, agent: Union[DDTAgent, MLPAgent], ENV_NAME, seed=None, pbar=N
     
     if pbar is None:
         print("Running agent ", agent.bot_name, " version ", agent.version)
-        pbar = tqdm(range(1, episodes + 1), miniters=10, mininterval=0.2, maxinterval=1)
+        pbar = tqdm(range(1, episodes + 1), miniters=10)
     for episode in pbar:
         reward = 0
         returned_object = run_episode(None, agent_in=agent, ENV_NAME=ENV_NAME)
         reward += returned_object[0]
         running_reward_array.append(returned_object[0])
         agent.replay_buffer.extend(returned_object[1])
-        if reward >= 499:
+        if reward >= 499 or (ENV_NAME == 'lunar' and reward >= 0):
             agent.save(models_path / f"{episode}th")
         agent.end_episode(reward)
 
@@ -107,6 +107,7 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--seed", help="Seed", default=-1, type=int)
     parser.add_argument("-np", "--not_parallel", help="Do not run in parallel", action='store_true', default=False)
     parser.add_argument("-p", "--process_number", help="Process number", type=int, default=0)
+    parser.add_argument("--silent", help="supress prints", action="store_true", default=False,)
 
     args = parser.parse_args()
     if args.seed == -1:
@@ -128,7 +129,8 @@ if __name__ == "__main__":
     else:
         raise Exception('No valid environment selected')
 
-    print(f"Agent {AGENT_TYPE} on {ENV_TYPE} seed {SEED}")
+    if not args.silent:
+        print(f"Agent {AGENT_TYPE} on {ENV_TYPE} seed {SEED}")
     # mp.set_start_method('spawn')
     mp.set_sharing_strategy('file_system')
     def start_process(i):

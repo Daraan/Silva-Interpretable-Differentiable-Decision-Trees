@@ -1,4 +1,6 @@
 # Created by Andrew Silva on 5/10/19
+from __future__ import annotations
+
 from pathlib import Path
 import re
 from typing import NamedTuple, Optional
@@ -36,7 +38,7 @@ class Result(NamedTuple):
     discrete_reward_std: float  # np.std(crispy_reward)
 
 
-def evaluate_model(fn, env, verbose=1) -> Result:
+def evaluate_model(fn: str | Path, env, verbose=1, count: Optional[tuple[int, int]]=None) -> Result:
     num_runs = 15
     
     final_deep_actor_fn = os.path.join(MODEL_DIR, fn)
@@ -84,11 +86,14 @@ def evaluate_model(fn, env, verbose=1) -> Result:
             f"Average reward after 5 runs is {np.mean(reward_after_five):.3f}\n"
             f"Average reward for the crispy network after {num_runs} runs is {np.mean(crispy_reward):.3f}\n"
         )
+    elif count is not None:
+        # not a precise but estimated progress count
+        print(f"{'~'+str(count[0]):>7}/{count[1]}", end="\r", flush=True)
     else:
         print(".", end="", flush=True)
-    return Result(fn, np.mean(reward_after_five), np.std(reward_after_five), np.mean(crispy_reward), np.std(crispy_reward))
+    return Result(str(fn), np.mean(reward_after_five), np.std(reward_after_five), np.mean(crispy_reward), np.std(crispy_reward))
 
-def search_for_good_model(env, verbose=1):
+def search_for_good_model(env, n_jobs=5, verbose=1):
     # Be sure to comment out gym_runner.gym_episode env.render
     max_reward = -float("inf")
     max_std = -float("inf")
@@ -97,20 +102,23 @@ def search_for_good_model(env, verbose=1):
     best_fn = 'non'
     best_fuzzy_fn = 'non'
     all_results = []
-    delayed_functions = []
-    files = []
-    for fn in os.listdir(MODEL_DIR):
-        if env in fn and 'actor' in fn and 'ddt' in fn:
-            delayed_functions.append(delayed(evaluate_model)(fn, env, verbose))
-            files.append(fn)
-    del fn
+
+    model_path = Path(MODEL_DIR)
+    files = [
+        fn
+        for fn in model_path.glob(f"**/*ddt*{env}*actor*")
+        if not fn.parent.name.startswith("models")  # excluded subdirs
+    ]
+    total = len(files)
+    delayed_functions = [delayed(evaluate_model)(fn.relative_to(model_path), env, verbose, (i, total)) for i, fn in enumerate(files, 1)]
+    filenames = [fn.relative_to(model_path).name for fn in files]
 
     all_results: "list[Result]" = Parallel(n_jobs=25)(delayed_functions)
     if not verbose:
         print("\n")
     metadata = [
         (RE_PARSE_FILENAME.match(file) or RE_PARSE_FILENAME_OLD.match(file)).groupdict()
-        for file in files
+        for file in filenames
     ]
     results_df = pd.DataFrame(all_results)
     results_df.index = create_df_index(metadata)
@@ -155,7 +163,7 @@ def best_model_from_data(results: pd.DataFrame):
         max_std,
     )
 
-def run_a_model(fn, args_in, seed: Optional[int]=0, verbose:int=1):
+def run_a_model(fn: str, args_in: argparse.Namespace, seed: Optional[int]=0, verbose:int=1):
     num_runs = 15
     if 'cart' in fn:
         env = 'cart'
@@ -247,18 +255,24 @@ def fc_state_dict(fn=''):
     fc_model = torch.load(fn)
     print(fc_model['actor'])
 
-def test_model(discrete_fn, seed=None, verbose:int=True):
+def test_model(discrete_fn: Path | str, seed=None, verbose:int=True, count: Optional[tuple[int, int]]=None):
     """Allows parallel execution of run_a_model"""
     if verbose:
         print("\n------------------\nTesting", discrete_fn)
+    elif count is not None:
+        # not a precise but estimated progress count
+        print(f"{'~'+str(count[0]):>7}/{count[1]}", end="\r", flush=True)
     else:
         print(".", end="", flush=True)
+    filename = discrete_fn.name if isinstance(discrete_fn, Path) else discrete_fn
+    # Run model
     (
         avg_reward_diff, 
         avg_reward_discrete, 
         std_reward_discrete
-    ) = run_a_model(discrete_fn, args, seed=seed, verbose=verbose)
-    header = match_filename(discrete_fn).groupdict()
+    ) = run_a_model(filename, args, seed=seed, verbose=verbose)
+    # Gather results
+    header = match_filename(filename).groupdict()
     version = header.get("version", 99)
     version = int(version) if version is not None else 99
     index = (
@@ -288,10 +302,21 @@ if __name__ == "__main__":
     parser.add_argument(
         "-a", "--all", help="Test all models; not only the best", action="store_true", default=False
     )
+    parser.add_argument(
+        "-v", "--verbose", help="Verbose output", action="store_true", default=False
+    )
+    parser.add_argument(
+        "--silent", help="No output", action="store_true", default=False
+    )
+    parser.add_argument(
+        "-N", "--n_jobs", help="Number of jobs for parallel execution", type=int, default=25
+    )
+    
     args = parser.parse_args()
     if args.seed == -1:
         args.seed = None
     SEED = args.seed
+    N_JOBS = args.n_jobs
 
     envir = args.env_type
     MODEL_DIR = args.model_dir
@@ -300,7 +325,7 @@ if __name__ == "__main__":
 
     if args.find_model:
         print("\nFinding model...")
-        *_, results_df = search_for_good_model(envir, verbose=not args.all)
+        *_, results_df = search_for_good_model(envir, n_jobs=N_JOBS, verbose=((not args.all or args.verbose) and not args.silent))
         Path("../outputs").mkdir(exist_ok=True)
         results_df.to_csv(f"../outputs/results_{envir}.csv")
     else:
@@ -344,8 +369,9 @@ if __name__ == "__main__":
         # 50266, 50267, 54857, 65926, 70614, 79986, 79987, 79988, 79989]
         best_results = []
         if args.all:  # execute parallel
+            total = len(models)
             eval_functions = [
-                delayed(test_model)(discrete_fn, SEED, False) for discrete_fn in models
+                delayed(test_model)(discrete_fn, SEED, False, (i, total)) for i, discrete_fn in enumerate(models, 1)
             ]
             results = Parallel(n_jobs=25)(eval_functions)
             print("\n")

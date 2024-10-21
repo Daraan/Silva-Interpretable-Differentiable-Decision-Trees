@@ -1,9 +1,13 @@
 # %%
 import re
 from typing import Generator, Iterable, Union
+import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 from pathlib import Path
+
+from interpretable_ddts import tools
+from interpretable_ddts.tools import load_rewards
 
 rewards_dir = Path('txts')
 model_dir = Path('models')
@@ -13,56 +17,45 @@ version = -1
 methods = "ddt", "mlp"
 ENV = "lunar"
 
-RE_PARSE_FILENAME = re.compile(
-    r"(?P<method>ddt|mlp)"
-    r"(?P<env>[^_]+?)(?P<GPU>GPU)?"
-    r"_(?P<features>(?P<num>\d+)_(?P<typ>[^_]+))"
-    r"_v(?P<version>\d+)"
-)
+# %%
 
-def parse_filename(filename: Union[str, Path]):
-    if isinstance(filename, Path):
-        filename = filename.name
-    filename = filename.split("/")[-1]
-    result = RE_PARSE_FILENAME.match(filename)
-    assert result is not None, f"Filename {filename} does not match pattern"
-    data = result.groupdict()
-    data["version"] = int(data["version"])
-    data["num"] = int(data["num"])
-    del data["features"]
-    data["GPU"] = bool(data["GPU"])
-    data["typ"] = "hidden layers" if data["typ"] == "hid" else data["typ"]
-    return data
+CART_CSV = "outputs/results_cart_recreation.csv"
+LUNAR_CSV = "outputs/results_lunar_recreation.csv"
+SC_CSV = None
 
-def load_data(files: Iterable[Union[str, Path]]):
-    files = list(files)
-    headers = list(map(parse_filename, files))
-    print(files)
-    objs = (
-        pd.read_csv(file, header=None).T.set_index(
-            # create_df_index
-            pd.MultiIndex.from_tuples(
-                [
-                    (
-                        header["env"],
-                        header["method"],
-                        header["typ"],
-                        int(header["num"]),
-                        bool(header["GPU"]),
-                        int(header["version"]),
-                    )
-                ],
-                names=["env", "method", "sub-method", "capacity", "GPU", "version"],
-            )
-        )
-        for file, header in zip(files, headers)
+
+def scatter_fuzzy_discrete(df: pd.DataFrame, ax=None, *, max_reward=500, **kwargs):
+    if ax is None:
+        fig, ax = plt.subplots()
+    sns.scatterplot(
+        data=df,
+        ax=ax,
+        x="fuzzy_reward",
+        y="discrete_reward",
+        style="sub-method",
+        edgecolors="fill",
+        linewidth=0,
+        hue="capacity",
+        palette="viridis_r",
+        alpha=0.5,
+        #size="episode",
+        **kwargs,
     )
-    data = pd.concat(objs)
-    data.sort_index(inplace=True,)
-    return data
+    min_reward = min(df["fuzzy_reward"].min(), df["discrete_reward"].min(), 0)
+    
+    ax.set_ylim(min_reward - 10, max_reward + 10)
+    ax.set_xlim(min_reward - 10, max_reward + 10)
+    
+    return fig, ax
 
+scatter_fuzzy_discrete(tools.load_output(CART_CSV, aggregate_version="mean"))
+plt.show()
+scatter_fuzzy_discrete(tools.load_output(CART_CSV, aggregate_version="max"))
+
+
+# %%
 files = list(rewards_dir.glob("*.txt"))
-data = load_data(files)
+data = load_rewards(files)
 
 envs = data.index.get_level_values("env").unique()
 
@@ -70,8 +63,6 @@ env_data = {
     env : data.xs(env, level="env")
     for env in envs
 }
-
-# %%
 
 data = pd.DataFrame()
 for method in methods:

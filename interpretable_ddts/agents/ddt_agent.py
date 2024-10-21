@@ -1,6 +1,5 @@
 # Created by Andrew Silva on 8/28/19
 import torch
-from torch.distributions import Categorical
 from ._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt import DDT
 from interpretable_ddts.opt_helpers import replay_buffer, ppo_update
@@ -76,7 +75,7 @@ class DDTAgent(AgentBase):
             if str(num_rules) + '_leaves' not in self.bot_name:
                 self.bot_name += str(num_rules) + '_leaves'
         super().__init__(input_dim, output_dim, _duplicate=_duplicate)
-        
+
         self.replay_buffer = replay_buffer.ReplayBufferSingleAgent()
         self.action_network = DDT(input_dim=input_dim,
                                   output_dim=output_dim,
