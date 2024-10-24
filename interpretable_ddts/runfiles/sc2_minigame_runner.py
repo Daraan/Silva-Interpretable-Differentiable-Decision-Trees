@@ -5,8 +5,9 @@ from sc2.constants import *
 from sc2.position import Pointlike, Point2
 from sc2.player import Bot
 import torch
+from typing import Any, Optional, Tuple
+from interpretable_ddts.agents._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt_agent import DDTAgent
-
 from interpretable_ddts.agents.mlp_agent import MLPAgent
 from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
 from interpretable_ddts.opt_helpers import sc_helpers
@@ -167,7 +168,7 @@ class SC2MicroBot(sc2.BotAI):
         return self.dead_enemies*self.kill_reward - len(self.dead_agent_list)
 
 
-def run_episode(q, main_agent, game_mode):
+def run_episode(q: Optional[Any], main_agent: AgentBase, game_mode: str) -> Tuple[float, dict]:
     result = None
     agent_in = main_agent
     kill_reward = 1

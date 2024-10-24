@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 from ._agent_interface import AgentBase
 import torch
@@ -44,10 +46,18 @@ class MLPAgent(AgentBase):
         num_hidden=1,
         version: Optional[int] = None,
         *, _duplicate=False,
+        save_output: bool = True
     ):
         # bot_name before calling super
         self.bot_name = bot_name + "_" + str(num_hidden) + '_hid'
-        super().__init__(input_dim, output_dim, version=version, _duplicate=_duplicate)
+        self.num_hidden = num_hidden
+        super().__init__(
+            input_dim,
+            output_dim,
+            version=version,
+            _duplicate=_duplicate,
+            save_output=save_output,
+        )
 
         self.replay_buffer = replay_buffer.ReplayBufferSingleAgent()
         self.action_network = BaselineFCNet(input_dim=input_dim,
@@ -64,7 +74,7 @@ class MLPAgent(AgentBase):
         self.value_opt = torch.optim.RMSprop(self.value_network.parameters(), lr=5e-3)
 
         self.last_state = [0, 0, 0, 0]
-        self.last_action = 0
+        self.last_action: int | torch.IntTensor = 0
         self.last_action_probs = torch.Tensor([0])
         self.last_value_pred = torch.Tensor([[0, 0]])
         self.last_deep_action_probs = torch.Tensor([0])
@@ -110,14 +120,21 @@ class MLPAgent(AgentBase):
                                   rewards=reward)
         return True
 
-    def save(self, fn: Union[Path, str]='last'):
+    def save(self, fn: Union[Path, str]='last', *, force_save: bool=False):
+        """
+        force_save: Still saves the output even in `save_output` is False
+        """
         assert self.version is not None
         checkpoint = dict()
         checkpoint['actor'] = self.action_network.state_dict()
         checkpoint['value'] = self.value_network.state_dict()
         save_path = Path(str(fn))
         save_path = save_path.with_name(save_path.name + self.bot_name + f"_v{self.version}" + ".pth.tar")
-        torch.save(checkpoint, save_path)
+        if self.save_output or force_save:
+            torch.save(checkpoint, save_path)
+        else:
+            pass
+            #logger.debug("Not saving output, because `save_output` is False")
 
     def load(self, fn='last'):
         # fn = fn + self.bot_name + '.pth.tar'
@@ -145,22 +162,24 @@ class MLPAgent(AgentBase):
         self.actor_opt = copy.deepcopy(state['actor_opt'])
         self.value_opt = copy.deepcopy(state['value_opt'])
         self.num_hidden = copy.deepcopy(state['num_hidden'])
-        
+    
+    @AgentBase.skip_if_no_output
     def _write_hparams(self):
-        self.rewards_file.open("w").write(
-            ", ".join(
-                [
-                    f"name: {self.bot_name}",
-                    "method: mlp",
-                    f"version: {self.version}",
-                    f"input_dim: {self.input_dim}",
-                    f"output_dim: {self.output_dim}",
-                    f"num_hidden: {self.num_hidden}",
-                    "rule_list: False",
-                ]
+        if self.save_output:
+            self.rewards_file.open("w").write(  # type: ignore[attribute]
+                ", ".join(
+                    [
+                        f"name: {self.bot_name}",
+                        "method: mlp",
+                        f"version: {self.version}",
+                        f"input_dim: {self.input_dim}",
+                        f"output_dim: {self.output_dim}",
+                        f"num_hidden: {self.num_hidden}",
+                        "rule_list: False",
+                    ]
+                )
+                + "\n"
             )
-            + "\n"
-        )
 
     def duplicate(self):
         new_agent = MLPAgent(
@@ -169,6 +188,7 @@ class MLPAgent(AgentBase):
             output_dim=self.output_dim,
             num_hidden=self.num_hidden,
             version=self.version,
+            save_output=self.save_output,
             _duplicate=True
             )
         new_agent.__setstate__(self.__getstate__())

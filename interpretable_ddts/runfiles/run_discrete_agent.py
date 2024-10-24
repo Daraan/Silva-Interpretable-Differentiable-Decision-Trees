@@ -1,9 +1,10 @@
 # Created by Andrew Silva on 5/10/19
 from __future__ import annotations
 
-from pathlib import Path
 import re
-from typing import NamedTuple, Optional
+import logging
+from pathlib import Path
+from typing import NamedTuple, Optional, cast
 from joblib import Parallel, delayed
 import pandas as pd
 import torch
@@ -38,11 +39,16 @@ class Result(NamedTuple):
     discrete_reward_std: float  # np.std(crispy_reward)
 
 
-def evaluate_model(fn: str | Path, env, verbose=1, count: Optional[tuple[int, int]]=None) -> Result:
+def evaluate_model(fn: str | Path, env: str, verbose: bool | int=1, count: Optional[tuple[int, int]]=None) -> Result | None:
     num_runs = 15
     
     final_deep_actor_fn = os.path.join(MODEL_DIR, fn)
-    fda = load_ddt(final_deep_actor_fn)
+    try:
+        fda = load_ddt(final_deep_actor_fn)
+    except FileNotFoundError as e:
+        print(e)
+        logging.error(f"File not found: {final_deep_actor_fn}")
+        return None
 
     policy_agent = DDTAgent(bot_name='crispytester',
                             input_dim=37,
@@ -101,7 +107,6 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
     max_fuzzy_std = -float("inf")
     best_fn = 'non'
     best_fuzzy_fn = 'non'
-    all_results = []
 
     model_path = Path(MODEL_DIR)
     files = [
@@ -110,10 +115,29 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
         if not fn.parent.name.startswith("models")  # excluded subdirs
     ]
     total = len(files)
+    if total == 0:
+        print("No results found in", model_path, "subdirs excluded")
+        import sys
+        sys.exit(1)
+        return
+    if verbose:
+        print(f"Found {total} models")
+    if total >= 50 and verbose == "auto":
+        print("Turning off full verbose output for more than 500 models")
+        verbose = False
+    elif verbose == "auto":
+        verbose = True
     delayed_functions = [delayed(evaluate_model)(fn.relative_to(model_path), env, verbose, (i, total)) for i, fn in enumerate(files, 1)]
     filenames = [fn.relative_to(model_path).name for fn in files]
 
-    all_results: "list[Result]" = Parallel(n_jobs=25)(delayed_functions)
+    all_results_ = cast("list[Result | None]", Parallel(n_jobs=25)(delayed_functions))
+    if not all(all_results_):
+        all_results: "list[Result]" = list(
+            filter(None, all_results_)
+        )  # filter potential FileNotFound
+        filenames = [fn for fn, res in zip(filenames, all_results_) if res]
+    else:
+        all_results = cast("list[Result]", all_results_)
     if not verbose:
         print("\n")
     metadata = [
@@ -193,6 +217,8 @@ def run_a_model(fn: str, args_in: argparse.Namespace, seed: Optional[int]=0, ver
             reward, replay_buffer = micro_episode(None, policy_agent, game_mode=env)
         elif env in ['cart', 'lunar']:
             reward, replay_buffer = gym_episode(None, policy_agent, env)
+        else:
+            raise ValueError(f"Unknown environment {env}")
         master_states.extend(replay_buffer['states'])
         master_actions.extend(replay_buffer['actions_taken'])
         reward_after_five += reward
@@ -248,7 +274,7 @@ def run_a_model(fn: str, args_in: argparse.Namespace, seed: Optional[int]=0, ver
         print(f"Average reward after {num_runs} runs is {reward_after_five/num_runs:.3f}\n"
             f"Average reward for the crispy network after {num_runs} runs is {np.mean(crispy_reward)} with std {np.std(crispy_reward):.3f}"
         )
-    return reward_after_five/num_runs, np.mean(crispy_reward), np.std(crispy_reward)
+    return reward_after_five / num_runs, np.mean(crispy_reward), np.std(crispy_reward)
 
 
 def fc_state_dict(fn=''):
@@ -303,13 +329,16 @@ if __name__ == "__main__":
         "-a", "--all", help="Test all models; not only the best", action="store_true", default=False
     )
     parser.add_argument(
-        "-v", "--verbose", help="Verbose output", action="store_true", default=False
+        "-v", "--verbose", help="Verbose output. If more than 500 models are checked switches to False", action="store_true", default="auto"
     )
     parser.add_argument(
         "--silent", help="No output", action="store_true", default=False
     )
     parser.add_argument(
         "-N", "--n_jobs", help="Number of jobs for parallel execution", type=int, default=25
+    )
+    parser.add_argument(
+        "--test", "--dry-run", help="Do not save any outputs", action="store_true", default=False
     )
     
     args = parser.parse_args()
@@ -325,9 +354,14 @@ if __name__ == "__main__":
 
     if args.find_model:
         print("\nFinding model...")
-        *_, results_df = search_for_good_model(envir, n_jobs=N_JOBS, verbose=((not args.all or args.verbose) and not args.silent))
+        *_, results_df = search_for_good_model(
+            envir,
+            n_jobs=N_JOBS,
+            verbose=(not args.silent and (args.verbose or not args.all)),
+        )
         Path("../outputs").mkdir(exist_ok=True)
-        results_df.to_csv(f"../outputs/results_{envir}.csv")
+        if not args.test:
+            results_df.to_csv(f"../outputs/results_{envir}.csv")
     else:
         # reuse saved data
         results_df = (pd.read_csv(f"../outputs/results_{envir}.csv")
@@ -382,7 +416,8 @@ if __name__ == "__main__":
             results_df.loc[index, "test_disc_reward"] = round(avg_reward_discrete, 3)
             results_df.loc[index, "test_disc_std"] = round(std_reward_discrete, 3)
             best_results.append(index)
-        results_df.to_csv(f"../outputs/results_{envir}.csv")
+        if not args.test:
+            results_df.to_csv(f"../outputs/results_{envir}.csv")
         if args.all:
             print("\nAll results:\n", results_df[["fn", "test_diff_reward", "test_disc_reward", "test_disc_std"]].sort_values("test_disc_reward", ascending=False))
         else:

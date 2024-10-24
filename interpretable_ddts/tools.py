@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from pandas._typing import AggFuncTypeBase
 
 RE_PARSE_FILENAME = re.compile(
-    r"(?P<parent_dir>.+?/)?"  # likely for model files
+    r"(?P<parent_dir>.+/)?"  # likely for model files
     r"(?:(?P<episode>\d+)th)?"        # model files only
     r"(?P<method>ddt|mlp)"
     r"(?P<env>[^_]+?)(?P<GPU>GPU)?"

@@ -1,4 +1,6 @@
 # Created by Andrew Silva on 8/28/19
+from __future__ import annotations
+
 import torch
 from ._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt import DDT
@@ -58,7 +60,9 @@ class DDTAgent(AgentBase):
         rule_list=False,
         num_rules=4,
         version: Optional[int] = None,
-        *, _duplicate=False,
+        *, 
+        save_output=True,
+        _duplicate=False,
     ):
         # bot_name before calling super
         self.bot_name = bot_name + '_'
@@ -74,7 +78,9 @@ class DDTAgent(AgentBase):
             init_leaves = num_rules
             if str(num_rules) + '_leaves' not in self.bot_name:
                 self.bot_name += str(num_rules) + '_leaves'
-        super().__init__(input_dim, output_dim, _duplicate=_duplicate)
+        super().__init__(
+            input_dim, output_dim, version=version, save_output=save_output,_duplicate=_duplicate
+        )
 
         self.replay_buffer = replay_buffer.ReplayBufferSingleAgent()
         self.action_network = DDT(input_dim=input_dim,
@@ -97,7 +103,7 @@ class DDTAgent(AgentBase):
         self.ppo = ppo_update.PPO([self.action_network, self.value_network], two_nets=True, use_gpu=False)
 
         self.last_state = [0, 0, 0, 0]
-        self.last_action = 0
+        self.last_action: int | torch.Tensor = 0
         self.last_action_probs = torch.Tensor([0])
         self.last_value_pred = torch.Tensor([[0, 0]])
         self.last_deep_action_probs = None
@@ -122,13 +128,17 @@ class DDTAgent(AgentBase):
                                   rewards=reward)
         return True
 
-    def save(self, fn: Union[Path, str]='last'):
+    def save(self, fn: Union[Path, str]='last', *, force_save: bool=False):
+        """
+        force_save: Still saves the output even in `save_output` is False
+        """        
         assert self.version is not None
         act_fn = str(fn) + self.bot_name + '_actor' + f'_v{self.version}.pth.tar'
         val_fn = str(fn) + self.bot_name + "_critic" + f"_v{self.version}.pth.tar"
 
-        save_ddt(act_fn, self.action_network)
-        save_ddt(val_fn, self.value_network)
+        if self.save_output or force_save:
+            save_ddt(act_fn, self.action_network)
+            save_ddt(val_fn, self.value_network)
 
     def load(self, fn='last', version=None):
         assert version
@@ -138,6 +148,9 @@ class DDTAgent(AgentBase):
         if os.path.exists(act_fn):
             self.action_network = load_ddt(act_fn)
             self.value_network = load_ddt(val_fn)
+        else:
+            msg = f"No such file or directory:' {act_fn}'"
+            raise FileNotFoundError(msg)
 
     def __getstate__(self):
         return {
@@ -155,16 +168,18 @@ class DDTAgent(AgentBase):
         for key in state:
             setattr(self, key, state[key])
 
+    @AgentBase.skip_if_no_output
     def _write_hparams(self):
-        self.rewards_file.open("w").write(", ".join([
-            f"name: {self.bot_name}",
-            "method: ddt",
-            f"version: {self.version}",
-            f"input_dim: {self.input_dim}",
-            f"output_dim: {self.output_dim}",
-            f"num_rules: {self.num_rules}",
-            f"rule_list: {self.rule_list}",
-        ]) + "\n")
+        if self.save_output:
+            self.rewards_file.open("w").write(", ".join([  # type: ignore[attribute]
+                f"name: {self.bot_name}",
+                "method: ddt",
+                f"version: {self.version}",
+                f"input_dim: {self.input_dim}",
+                f"output_dim: {self.output_dim}",
+                f"num_rules: {self.num_rules}",
+                f"rule_list: {self.rule_list}",
+            ]) + "\n")
 
     def duplicate(self):
         new_agent = DDTAgent(bot_name=self.bot_name.rstrip('_'),
@@ -173,6 +188,7 @@ class DDTAgent(AgentBase):
                              rule_list=self.rule_list,
                              num_rules=self.num_rules,
                              version=self.version,
+                             save_output=self.save_output,
                              _duplicate=True
                              )
         new_agent.__setstate__(self.__getstate__())

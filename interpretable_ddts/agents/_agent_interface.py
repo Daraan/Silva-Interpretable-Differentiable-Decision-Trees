@@ -1,4 +1,10 @@
+from __future__ import annotations
+
+from functools import wraps
 from typing import Optional
+from typing_extensions import Self
+
+from interpretable_ddts.opt_helpers import replay_buffer, ppo_update
 from pathlib import Path
 
 import torch
@@ -10,7 +16,16 @@ class AgentBase:
     bot_name : str
     _duplicate : bool
     
-    def __init__(self, input_dim=4, output_dim=2, *, version, _duplicate):
+    @staticmethod
+    def skip_if_no_output(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            if not self.save_output:
+                return
+            return func(self, *args, **kwargs)
+        return wrapper
+    
+    def __init__(self, input_dim=4, output_dim=2, *, version: int | None, save_output: bool, _duplicate: bool):
         assert self.bot_name, "self.bot_name should be set before calling super()"
         self.output_dim = output_dim
         self.input_dim = input_dim
@@ -18,15 +33,23 @@ class AgentBase:
 
         # check for next availiable version
         self.rewards_file = None
+        self.save_output = save_output
         self._version = None
         if version is None:
             self._check_version()
         else:
             self.version = version
 
+        # Not set attributes
+        self.replay_buffer: replay_buffer.ReplayBufferSingleAgent
+        self.num_steps : int
+        self.reward_history : list[int]
+        self.ppo: ppo_update.PPO
+
     def _check_version(self) -> int:
         rewards_path = Path("../txts")
-        rewards_path.mkdir(parents=True, exist_ok=True)
+        if self.save_output:
+            rewards_path.mkdir(parents=True, exist_ok=True)
         rewards_file = rewards_path / (self.bot_name + "_v0_rewards.txt")
         if rewards_file.exists():
             files = list(rewards_path.glob(f"{self.bot_name}_v*"))
@@ -42,7 +65,7 @@ class AgentBase:
         raise NotImplementedError
 
     @property
-    def version(self):
+    def version(self) -> None | int:
         return self._version
 
     @version.setter
@@ -55,17 +78,21 @@ class AgentBase:
         if self.rewards_file:
             return
         txts_path = Path("../txts")
-        txts_path.mkdir(parents=True, exist_ok=True)
         rewards_file = txts_path / (
             self.bot_name + f"_v{self.version}" + "_rewards.txt"
         )
         self.rewards_file = rewards_file
-        self._write_hparams()
-        self.rewards_file.open("a")
+        if self.save_output:
+            txts_path.mkdir(parents=True, exist_ok=True)
+            self._write_hparams()
+            self.rewards_file.open("a")
 
     #
+    
+    def save_reward(self, reward: int):
+        ...
 
-    def get_action(self, observation, max_inputs):
+    def get_action(self, observation, max_inputs:int = -1):
         with torch.no_grad():
             obs = torch.Tensor(observation)
             obs = obs.view(1, -1)
@@ -98,11 +125,12 @@ class AgentBase:
         assert self.version is not None and self.rewards_file
         self.reward_history.append(timesteps)
         value_loss, action_loss = self.ppo.batch_updates(self.replay_buffer, self)
-        self.rewards_file.open("a").write(str(timesteps) + "\n")
+        if self.save_output:
+            self.rewards_file.open("a").write(str(timesteps) + "\n")
         self.num_steps += 1
 
     def reset(self):
         self.replay_buffer.clear()
 
-    def duplicate(self):
+    def duplicate(self) -> Self:
         raise NotImplementedError

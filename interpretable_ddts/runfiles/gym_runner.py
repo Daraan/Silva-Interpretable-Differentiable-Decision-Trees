@@ -1,6 +1,8 @@
 # Created by Andrew Silva on 8/28/19
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, Any
 import gym
 import numpy as np
 import torch
@@ -17,7 +19,7 @@ from tqdm import tqdm
 
 from interpretable_ddts.tools import seed_everything
 
-def run_episode(q, agent_in: AgentBase, ENV_NAME, seed: Optional[int]=0):
+def run_episode(q, agent_in: AgentBase, ENV_NAME: str, seed: Optional[int]=0) -> tuple[float, dict[str, Any]]:
     agent = agent_in.duplicate()
     if ENV_NAME == 'lunar':
         env = gym.make('LunarLander-v2')
@@ -63,10 +65,12 @@ def main(episodes, agent: Union[DDTAgent, MLPAgent], ENV_NAME, seed=None, pbar=N
     running_reward_array = []
     models_path = Path("../models") / (agent.bot_name + f"_v{agent.version}")
     rewards_path = Path('../txts')
-    models_path.mkdir(parents=True, exist_ok=True)
-    rewards_path.mkdir(parents=True, exist_ok=True)
+    if agent.save_output:
+        models_path.mkdir(parents=True, exist_ok=True)
+        rewards_path.mkdir(parents=True, exist_ok=True)
     # Create a link to the rewards file
-    (models_path / agent.rewards_file.name).symlink_to(agent.rewards_file.resolve())
+    if agent.save_output:
+        (models_path / agent.rewards_file.name).symlink_to(agent.rewards_file.resolve())
     
     if pbar is None:
         print("Running agent ", agent.bot_name, " version ", agent.version)
@@ -108,6 +112,7 @@ if __name__ == "__main__":
     parser.add_argument("-np", "--not_parallel", help="Do not run in parallel", action='store_true', default=False)
     parser.add_argument("-p", "--process_number", help="Process number", type=int, default=0)
     parser.add_argument("--silent", help="supress prints", action="store_true", default=False,)
+    parser.add_argument("--test", "--dry-run", help="Do not save any models", action="store_true", default=False)
 
     args = parser.parse_args()
     if args.seed == -1:
@@ -133,11 +138,15 @@ if __name__ == "__main__":
         print(f"Agent {AGENT_TYPE} on {ENV_TYPE} seed {SEED}")
     # mp.set_start_method('spawn')
     mp.set_sharing_strategy('file_system')
+    torch.backends.cudnn.deterministic = True
+
     def start_process(i):
         if i > 0:  # delay the start for file existence checks
             time.sleep(i/2)
         # Initialize with different seed
-        seed_everything(None, SEED + i if SEED is not None else None)
+        sub_seed = SEED + i if SEED is not None else None
+        seed_everything(None, sub_seed, torch_manual=False)
+        seed2 = np.random.randint(0, 1000000)
         bot_name = AGENT_TYPE + ENV_TYPE
         if USE_GPU:
             bot_name += 'GPU'
@@ -146,12 +155,14 @@ if __name__ == "__main__":
                                     input_dim=dim_in,
                                     output_dim=dim_out,
                                     rule_list=args.rule_list,
-                                    num_rules=args.num_leaves)
+                                    num_rules=args.num_leaves,
+                                    save_output=not args.test)
         elif AGENT_TYPE == 'mlp':
             policy_agent = MLPAgent(input_dim=dim_in,
                                     bot_name=bot_name,
                                     output_dim=dim_out,
-                                    num_hidden=args.num_hidden)
+                                    num_hidden=args.num_hidden,
+                                    save_output=not args.test)
         else:
             raise Exception('No valid network selected')
         pbar = tqdm(
@@ -162,8 +173,9 @@ if __name__ == "__main__":
             position=i + (args.process_number % 5) * 5,
             postfix="Process " + str(i + (args.process_number * 5)),
         )
-        reward_array = main(NUM_EPS, policy_agent, ENV_TYPE, seed=SEED, pbar=pbar)
+        reward_array = main(NUM_EPS, policy_agent, ENV_TYPE, seed=seed2, pbar=pbar)
         return reward_array
+    
     if not args.not_parallel:
         data = Parallel(n_jobs=5, pre_dispatch="all")(
             delayed(start_process)(i) for i in range(5)
