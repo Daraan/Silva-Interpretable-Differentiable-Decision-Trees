@@ -10,6 +10,16 @@ import numpy as np
 import torch
 if TYPE_CHECKING:
     from pandas._typing import AggFuncTypeBase
+    
+import gymnasium as gym
+    
+from packaging.version import parse as parse_version, Version
+GYM_VERSION = parse_version(gym.__version__)
+
+GYM_VERSION = parse_version(gym.__version__)
+GYM_V_0_26 = GYM_VERSION >= Version("0.26")
+"""First gymnasium version and above"""
+GYM_V1 = GYM_VERSION >= Version("1.0.0")
 
 RE_PARSE_FILENAME = re.compile(
     r"(?P<parent_dir>.+/)?"  # likely for model files
@@ -93,6 +103,11 @@ def load_output(
     if not aggregate_version:
         return df
     df_2 = df.reset_index().set_index([*index, "episode"])
+    try:
+        if "mean" in aggregate_version:
+            df_2.drop(columns=["fn"], inplace=True)
+    except TypeError:
+        pass
     agg_df = (
         df_2.groupby(list(index)).aggregate(
             aggregate_version
@@ -164,7 +179,8 @@ def seed_everything(env, seed, torch_manual=False):
         torch.cuda.manual_seed_all(seed)
     #
     if env:
-        env.seed(seed)
+        if not GYM_V_0_26:  # gymnasium does not have this
+            env.seed(seed)
         env.action_space.seed(seed)
 
 

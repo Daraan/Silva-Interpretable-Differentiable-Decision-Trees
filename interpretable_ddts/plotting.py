@@ -2,9 +2,12 @@
 import re
 from typing import Generator, Iterable, Union
 import seaborn as sns
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import pandas as pd
 from pathlib import Path
+
+sns.set_theme()
 
 from interpretable_ddts import tools
 from interpretable_ddts.tools import load_rewards
@@ -27,13 +30,15 @@ SC_CSV = None
 def scatter_fuzzy_discrete(df: pd.DataFrame, ax=None, *, max_reward=500, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
+    if "edgecolors" not in kwargs and mpl.__version__ < "3.7.":
+        kwargs["edgecolors"] = "fill"
     sns.scatterplot(
         data=df,
         ax=ax,
         x="fuzzy_reward",
         y="discrete_reward",
         style="sub-method",
-        edgecolors="fill",
+        #edgecolors="fill",
         linewidth=0,
         hue="capacity",
         palette="viridis_r",

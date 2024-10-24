@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional, Union, Any
-import gym
+import gymnasium as gym
 import numpy as np
 import torch
 from interpretable_ddts.agents._agent_interface import AgentBase
@@ -19,6 +19,12 @@ from tqdm import tqdm
 
 from interpretable_ddts.tools import seed_everything
 
+from packaging.version import parse as parse_version, Version
+GYM_VERSION = parse_version(gym.__version__)
+GYM_V_0_26 = GYM_VERSION >= Version("0.26")
+"""First gymnasium version"""
+GYM_V1 = GYM_VERSION >= Version("1.0.0")
+
 def run_episode(q, agent_in: AgentBase, ENV_NAME: str, seed: Optional[int]=0) -> tuple[float, dict[str, Any]]:
     agent = agent_in.duplicate()
     if ENV_NAME == 'lunar':
@@ -31,18 +37,27 @@ def run_episode(q, agent_in: AgentBase, ENV_NAME: str, seed: Optional[int]=0) ->
     # docstring: returns an initial observation.
     # If the environment already has a random number generator and reset is called with seed=None, the RNG should not be reset.
     # Moreover, reset should (in the typical use case) be called with an integer seed right after initialization and then never again.
-    state = env.reset()  # Reset environment and record the starting state
+    # Reset environment and record the starting state
+    if GYM_V_0_26:
+        state, info = env.reset(seed=seed)
+    else:
+        state = env.reset()
 
     done = False
     while not done:
         action = agent.get_action(state)
         # Step through environment using chosen action
-        state, reward, done, _ = env.step(action)
+        if GYM_V_0_26:
+            state, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
+        else:
+            state, reward, done, _ = env.step(action)
         # env.render()
         # Save reward
         agent.save_reward(reward)
         if done:
             break
+    env.close()
     reward_sum = np.sum(agent.replay_buffer.rewards_list)
     rewards_list, advantage_list, deeper_advantage_list = discount_reward(agent.replay_buffer.rewards_list,
                                                                           agent.replay_buffer.value_list,
