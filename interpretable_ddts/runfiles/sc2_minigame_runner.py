@@ -173,7 +173,6 @@ def run_episode(q: Optional[Any], main_agent: AgentBase, game_mode: str) -> Tupl
     agent_in = main_agent
     kill_reward = 1
     bot = SC2MicroBot(rl_agent=agent_in, kill_reward=kill_reward)
-
     try:
         result = sc2.run_game(sc2.maps.get(game_mode),
                               [Bot(Race.Terran, bot)],
@@ -231,6 +230,10 @@ if __name__ == '__main__':
     parser.add_argument("-n", "--num_hidden", help="number of hidden layers for MLP ", type=int, default=0)
     parser.add_argument("-e", "--episodes", help="how many episodes", type=int, default=1000)
     parser.add_argument("-gpu", help="run on GPU?", action='store_true')
+    parser.add_argument("--test", "--dry-run", help="Do not save outputs", action='store_true')
+
+    if not "SC2PATH" in os.environ and not os.path.exists(os.path.expanduser("~/StarCraftII")):
+        raise OSError("StarCraftII not found. Please set SC2PATH environment variable")
 
     args = parser.parse_args()
     AGENT_TYPE = args.agent_type  # 'ddt' or 'mlp'
@@ -248,12 +251,14 @@ if __name__ == '__main__':
                                     input_dim=dim_in,
                                     output_dim=dim_out,
                                     rule_list=False,
-                                    num_rules=args.num_leaves)
+                                    num_rules=args.num_leaves,
+                                    save_output=not args.test)
         elif AGENT_TYPE == 'mlp':
             policy_agent = MLPAgent(input_dim=dim_in,
                                     bot_name=bot_name,
                                     output_dim=dim_out,
-                                    num_hidden=args.num_hidden)
+                                    num_hidden=args.num_hidden,
+                                    save_output=not args.test)
 
         else:
             raise Exception('No valid network selected')

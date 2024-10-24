@@ -133,12 +133,13 @@ class DDTAgent(AgentBase):
         force_save: Still saves the output even in `save_output` is False
         """        
         assert self.version is not None
+        if not (self.save_output or force_save):
+            return
         act_fn = str(fn) + self.bot_name + '_actor' + f'_v{self.version}.pth.tar'
         val_fn = str(fn) + self.bot_name + "_critic" + f"_v{self.version}.pth.tar"
 
-        if self.save_output or force_save:
-            save_ddt(act_fn, self.action_network)
-            save_ddt(val_fn, self.value_network)
+        save_ddt(act_fn, self.action_network)
+        save_ddt(val_fn, self.value_network)
 
     def load(self, fn='last', version=None):
         assert version

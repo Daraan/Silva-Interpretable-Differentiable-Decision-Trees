@@ -81,7 +81,10 @@ def main(episodes, agent: Union[DDTAgent, MLPAgent], ENV_NAME, seed=None, pbar=N
         reward += returned_object[0]
         running_reward_array.append(returned_object[0])
         agent.replay_buffer.extend(returned_object[1])
-        if reward >= 499 or (ENV_NAME == 'lunar' and reward >= 0):
+        if (
+            (reward >= 499 or (ENV_NAME == "lunar" and reward >= 0)) 
+            and episode % 500 != 0  # saved below
+        ):
             agent.save(models_path / f"{episode}th")
         agent.end_episode(reward)
 

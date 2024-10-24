@@ -74,7 +74,7 @@ class MLPAgent(AgentBase):
         self.value_opt = torch.optim.RMSprop(self.value_network.parameters(), lr=5e-3)
 
         self.last_state = [0, 0, 0, 0]
-        self.last_action: int | torch.IntTensor = 0
+        self.last_action: torch.IntTensor = torch.IntTensor([0])
         self.last_action_probs = torch.Tensor([0])
         self.last_value_pred = torch.Tensor([[0, 0]])
         self.last_deep_action_probs = torch.Tensor([0])
@@ -125,16 +125,15 @@ class MLPAgent(AgentBase):
         force_save: Still saves the output even in `save_output` is False
         """
         assert self.version is not None
+        if not (self.save_output or force_save):
+            #logger.debug("Not saving output, because `save_output` is False")
+            return
         checkpoint = dict()
         checkpoint['actor'] = self.action_network.state_dict()
         checkpoint['value'] = self.value_network.state_dict()
         save_path = Path(str(fn))
         save_path = save_path.with_name(save_path.name + self.bot_name + f"_v{self.version}" + ".pth.tar")
-        if self.save_output or force_save:
-            torch.save(checkpoint, save_path)
-        else:
-            pass
-            #logger.debug("Not saving output, because `save_output` is False")
+        torch.save(checkpoint, save_path)
 
     def load(self, fn='last'):
         # fn = fn + self.bot_name + '.pth.tar'
