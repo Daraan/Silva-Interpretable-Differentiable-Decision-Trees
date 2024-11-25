@@ -20,20 +20,19 @@ from tqdm import tqdm
 from interpretable_ddts.tools import seed_everything
 
 from packaging.version import parse as parse_version, Version
+
+from gymnasium.envs.box2d.lunar_lander import LunarLander
+from gymnasium.envs.classic_control.cartpole import CartPoleEnv
+from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo
+
 GYM_VERSION = parse_version(gym.__version__)
 GYM_V_0_26 = GYM_VERSION >= Version("0.26")
 """First gymnasium version"""
 GYM_V1 = GYM_VERSION >= Version("1.0.0")
 
-def run_episode(q, agent_in: AgentBase, ENV_NAME: str, seed: Optional[int]=0) -> tuple[float, dict[str, Any]]:
+def run_episode(q, env: gym.Env, agent_in: AgentBase, ENV_NAME: str, seed: Optional[int]=0, render_mode=None) -> tuple[float, dict[str, Any]]:
     agent = agent_in.duplicate()
-    if ENV_NAME == 'lunar':
-        env = gym.make('LunarLander-v2')
-    elif ENV_NAME == 'cart':
-        env = gym.make('CartPole-v1')
-    else:
-        raise Exception('No valid environment selected')
-    seed_everything(env, seed)
+    
     # docstring: returns an initial observation.
     # If the environment already has a random number generator and reset is called with seed=None, the RNG should not be reset.
     # Moreover, reset should (in the typical use case) be called with an integer seed right after initialization and then never again.
@@ -76,7 +75,7 @@ def run_episode(q, agent_in: AgentBase, ENV_NAME: str, seed: Optional[int]=0) ->
     return to_return
 
 
-def main(episodes, agent: Union[DDTAgent, MLPAgent], ENV_NAME, seed=None, pbar=None):
+def main(episodes, agent: Union[DDTAgent, MLPAgent], ENV_NAME, seed=None, pbar=None, render_mode=None):
     running_reward_array = []
     models_path = Path("../models") / (agent.bot_name + f"_v{agent.version}")
     rewards_path = Path('../txts')
@@ -87,12 +86,37 @@ def main(episodes, agent: Union[DDTAgent, MLPAgent], ENV_NAME, seed=None, pbar=N
     if agent.save_output:
         (models_path / agent.rewards_file.name).symlink_to(agent.rewards_file.resolve())
     
+    if ENV_NAME == "lunar":
+        env = gym.make("LunarLander-v2", render_mode=render_mode)
+    elif ENV_NAME == "cart":
+        env = gym.make("CartPole-v1", render_mode=render_mode)
+    else:
+        raise Exception("No valid environment selected")
+    if render_mode is not None:
+        env = RecordVideo(
+            env,
+            "../outputs/video/",
+            name_prefix="training",
+            episode_trigger=lambda x: x % 250 == 0,
+        )
+        env = RecordEpisodeStatistics(env)
+    seed_everything(env, seed)
+    if GYM_V_0_26:
+        env.reset(seed=seed)
+    
     if pbar is None:
         print("Running agent ", agent.bot_name, " version ", agent.version)
         pbar = tqdm(range(1, episodes + 1), miniters=10)
     for episode in pbar:
         reward = 0
-        returned_object = run_episode(None, agent_in=agent, ENV_NAME=ENV_NAME)
+        returned_object = run_episode(
+            None,
+            env=env,
+            agent_in=agent,
+            ENV_NAME=ENV_NAME,
+            render_mode=render_mode,
+            seed=None,
+        )
         reward += returned_object[0]
         running_reward_array.append(returned_object[0])
         agent.replay_buffer.extend(returned_object[1])
@@ -131,24 +155,31 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--process_number", help="Process number", type=int, default=0)
     parser.add_argument("--silent", help="supress prints", action="store_true", default=False,)
     parser.add_argument("--test", "--dry-run", help="Do not save any models", action="store_true", default=False)
+    parser.add_argument("--render_mode", "-rm", help="Render the environment", 
+                        type=str, default=None, const="human", nargs='?')
 
     args = parser.parse_args()
     if args.seed == -1:
         args.seed = None
+    if args.render_mode == "human" and not args.not_parallel:
+        raise Exception("Cannot use 'human' render in parallel.")
     SEED = args.seed
-    
-    AGENT_TYPE = args.agent_type  # 'ddt', 'mlp'
-    NUM_EPS = args.episodes  # num episodes Default 1000
-    ENV_TYPE = args.env_type  # 'cart' or 'lunar' Default 'cart'
+    AGENT_TYPE: str = args.agent_type  # 'ddt', 'mlp'
+    NUM_EPS: int = args.episodes  # num episodes Default 1000
+    ENV_TYPE: str = args.env_type  # 'cart' or 'lunar' Default 'cart'
     USE_GPU = args.gpu  # Applies for 'prolo' only. use gpu? Default false
+
+    init_env: gym.Env
     if ENV_TYPE == 'lunar':
-        init_env = gym.make('LunarLander-v2')
+        init_env = cast(LunarLander, gym.make('LunarLander-v2', render_mode=args.render_mode))
         dim_in = init_env.observation_space.shape[0]
         dim_out = init_env.action_space.n
+        env = "LunarLander-v2"
     elif ENV_TYPE == 'cart':
-        init_env = gym.make('CartPole-v1')
+        init_env = cast(CartPoleEnv, gym.make("CartPole-v1", render_mode=args.render_mode))
         dim_in = init_env.observation_space.shape[0]
         dim_out = init_env.action_space.n
+        env = "CartPole-v1"
     else:
         raise Exception('No valid environment selected')
 
@@ -191,7 +222,7 @@ if __name__ == "__main__":
             position=i + (args.process_number % 5) * 5,
             postfix="Process " + str(i + (args.process_number * 5)),
         )
-        reward_array = main(NUM_EPS, policy_agent, ENV_TYPE, seed=seed2, pbar=pbar)
+        reward_array = main(NUM_EPS, policy_agent, ENV_TYPE, seed=seed2, pbar=pbar, render_mode=args.render_mode)
         return reward_array
     
     if not args.not_parallel:
