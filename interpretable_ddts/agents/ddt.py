@@ -54,9 +54,8 @@ class DDT(nn.Module):
                 depth = int(np.floor(np.log2(self.leaf_init_information)))
             else:
                 depth = 4
-            for level in range(depth):
-                for node in range(2**level):
-                    comparators.append(np.array([1.0/self.input_dim]))
+            # Add value for each node in the tree; for each level 2**level nodes
+            comparators = np.full([2 ** (depth) - 1, 1], 1.0 / self.input_dim)
         new_comps = torch.Tensor(comparators)
         new_comps.requires_grad = True
         if self.use_gpu:
@@ -65,16 +64,13 @@ class DDT(nn.Module):
 
     def init_weights(self, weights):
         if weights is None:
-            weights = []
             if type(self.leaf_init_information) is int:
                 depth = int(np.floor(np.log2(self.leaf_init_information)))
             else:
                 depth = 4
-            for level in range(depth):
-                for node in range(2**level):
-                    weights.append(np.random.rand(self.input_dim))
-
-        new_weights = torch.Tensor(weights)
+            new_weights = torch.rand(2 ** (depth) - 1, self.input_dim)
+        else:
+            new_weights = torch.Tensor(weights)
         new_weights.requires_grad = True
         if self.use_gpu:
             new_weights = new_weights.cuda()
@@ -133,6 +129,7 @@ class DDT(nn.Module):
             if type(self.leaf_init_information) is int:
                 depth = int(np.floor(np.log2(self.leaf_init_information)))
             else:
+                assert type(self.leaf_init_information) is not float
                 depth = 4
 
             last_level = np.arange(2**(depth-1)-1, 2**depth-1)
@@ -160,10 +157,17 @@ class DDT(nn.Module):
                 else:
                     going_left = True
                     leaf_index += 1
-                new_probs = np.random.uniform(0, 1, self.output_dim)  # *(1.0/self.output_dim)
+                if self.output_dim is None:
+                    new_probs = np.random.uniform(
+                        0, 1, self.output_dim
+                    )  # *(1.0/self.output_dim)
+                else:
+                    new_probs = np.random.uniform(
+                        0, 1, self.output_dim
+                    ).tolist()  # *(1.0/self.output_dim)
                 self.leaf_init_information.append([sorted(left_path), sorted(right_path), new_probs])
                 new_leaves.append(new_probs)
-
+        new_leaves = np.array(new_leaves) # single array for tensor creation
         labels = torch.Tensor(new_leaves)
         if self.use_gpu:
             labels = labels.cuda()

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import torch
+from torch import nn
 from ._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt import DDT
 from interpretable_ddts.opt_helpers import replay_buffer, ppo_update
@@ -60,7 +61,8 @@ class DDTAgent(AgentBase):
         rule_list=False,
         num_rules=4,
         version: Optional[int] = None,
-        *, 
+        *,
+        use_gpu=False,
         save_output=True,
         _duplicate=False,
     ):
@@ -78,32 +80,41 @@ class DDTAgent(AgentBase):
             init_leaves = num_rules
             if str(num_rules) + '_leaves' not in self.bot_name:
                 self.bot_name += str(num_rules) + '_leaves'
-        super().__init__(
-            input_dim, output_dim, version=version, save_output=save_output,_duplicate=_duplicate
+        AgentBase.__init__(
+            self,
+            input_dim,
+            output_dim,
+            version=version,
+            save_output=save_output,
+            _duplicate=_duplicate,
         )
 
         self.replay_buffer = replay_buffer.ReplayBufferSingleAgent()
-        self.action_network = DDT(input_dim=input_dim,
-                                  output_dim=output_dim,
-                                  weights=init_weights,
-                                  comparators=init_comparators,
-                                  leaves=init_leaves,
-                                  alpha=1,
-                                  is_value=False,
-                                  use_gpu=False)
-        self.value_network = DDT(input_dim=input_dim,
-                                 output_dim=output_dim,
-                                 weights=init_weights,
-                                 comparators=init_comparators,
-                                 leaves=init_leaves,
-                                 alpha=1,
-                                 is_value=True,
-                                 use_gpu=False)
+        self.action_network = DDT(
+            input_dim=input_dim,
+            output_dim=output_dim,
+            weights=init_weights,
+            comparators=init_comparators,
+            leaves=init_leaves,
+            alpha=1,
+            is_value=False,
+            use_gpu=use_gpu,
+        )
+        self.value_network = DDT(
+            input_dim=input_dim,
+            output_dim=output_dim,
+            weights=init_weights,
+            comparators=init_comparators,
+            leaves=init_leaves,
+            alpha=1,
+            is_value=True,
+            use_gpu=use_gpu,
+        )
 
         self.ppo = ppo_update.PPO([self.action_network, self.value_network], two_nets=True, use_gpu=False)
 
         self.last_state = [0, 0, 0, 0]
-        self.last_action: int | torch.Tensor = 0
+        self.last_action: torch.IntTensor = torch.IntTensor([0])
         self.last_action_probs = torch.Tensor([0])
         self.last_value_pred = torch.Tensor([[0, 0]])
         self.last_deep_action_probs = None
@@ -117,15 +128,17 @@ class DDTAgent(AgentBase):
         return super().get_action(observation, max_inputs)
 
     def save_reward(self, reward):
-        self.replay_buffer.insert(obs=[self.last_state],
-                                  action_log_probs=self.last_action_probs,
-                                  value_preds=self.last_value_pred[self.last_action.item()],
-                                  deeper_action_log_probs=self.last_deep_action_probs,
-                                  deeper_value_pred=self.last_deep_value_pred[self.last_action.item()],
-                                  last_action=self.last_action,
-                                  full_probs_vector=self.full_probs,
-                                  deeper_full_probs_vector=self.deeper_full_probs,
-                                  rewards=reward)
+        self.replay_buffer.insert(
+            obs=[self.last_state],
+            action_log_probs=self.last_action_probs,
+            value_preds=self.last_value_pred[self.last_action.item()],
+            deeper_action_log_probs=self.last_deep_action_probs,
+            deeper_value_pred=self.last_deep_value_pred[self.last_action.item()],
+            last_action=self.last_action.item(),
+            full_probs_vector=self.full_probs,
+            deeper_full_probs_vector=self.deeper_full_probs,
+            rewards=reward,
+        )
         return True
 
     def save(self, fn: Union[Path, str]='last', *, force_save: bool=False):
@@ -190,7 +203,8 @@ class DDTAgent(AgentBase):
                              num_rules=self.num_rules,
                              version=self.version,
                              save_output=self.save_output,
-                             _duplicate=True
+                             _duplicate=True,
+                             use_gpu=False  # <-----
                              )
         new_agent.__setstate__(self.__getstate__())
         return new_agent

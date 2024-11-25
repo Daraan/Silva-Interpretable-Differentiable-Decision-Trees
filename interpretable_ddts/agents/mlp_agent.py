@@ -115,7 +115,7 @@ class MLPAgent(AgentBase):
         self.replay_buffer.insert(obs=[self.last_state],
                                   action_log_probs=self.last_action_probs,
                                   value_preds=self.last_value_pred[self.last_action.item()],
-                                  last_action=self.last_action,
+                                  last_action=self.last_action.item(),
                                   full_probs_vector=self.full_probs,
                                   rewards=reward)
         return True

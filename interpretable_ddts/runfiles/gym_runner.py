@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Union, Any
+from typing import Optional, Union, Any, cast
 import gymnasium as gym
 import numpy as np
 import torch
@@ -56,7 +56,7 @@ def run_episode(q, env: gym.Env, agent_in: AgentBase, ENV_NAME: str, seed: Optio
         agent.save_reward(reward)
         if done:
             break
-    env.close()
+    #env.close()
     reward_sum = np.sum(agent.replay_buffer.rewards_list)
     rewards_list, advantage_list, deeper_advantage_list = discount_reward(agent.replay_buffer.rewards_list,
                                                                           agent.replay_buffer.value_list,

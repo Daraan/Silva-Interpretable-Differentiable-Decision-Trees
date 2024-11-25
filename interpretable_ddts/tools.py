@@ -8,6 +8,7 @@ import pandas as pd
 import random
 import numpy as np
 import torch
+import torch.cuda
 if TYPE_CHECKING:
     from pandas._typing import AggFuncTypeBase
     
@@ -103,11 +104,8 @@ def load_output(
     if not aggregate_version:
         return df
     df_2 = df.reset_index().set_index([*index, "episode"])
-    try:
-        if "mean" in aggregate_version:
-            df_2.drop(columns=["fn"], inplace=True)
-    except TypeError:
-        pass
+    if isinstance(aggregate_version, (str, list, Iterable)) and "mean" in aggregate_version:
+        df_2.drop(columns=["fn"], inplace=True)
     agg_df = (
         df_2.groupby(list(index)).aggregate(
             aggregate_version

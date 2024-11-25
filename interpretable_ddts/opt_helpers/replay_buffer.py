@@ -127,7 +127,6 @@ class ReplayBufferSingleAgent(object):
         }
         return sample_back
 
-
 def discount_reward(reward, value, deeper_value):
     R = 0
     rewards = []

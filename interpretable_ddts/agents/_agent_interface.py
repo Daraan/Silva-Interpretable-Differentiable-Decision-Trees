@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import wraps
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from typing_extensions import Self
 
 from interpretable_ddts.opt_helpers import replay_buffer, ppo_update
@@ -11,10 +11,18 @@ import torch
 from torch.distributions import Categorical
 
 
+
+if TYPE_CHECKING:
+    from interpretable_ddts.agents.mlp_agent import BaselineFCNet
+    from interpretable_ddts.agents.ddt import DDT
+
 class AgentBase:
     
     bot_name : str
     _duplicate : bool
+    
+    action_network: BaselineFCNet | DDT
+    value_network: BaselineFCNet | DDT
     
     @staticmethod
     def skip_if_no_output(func):
@@ -31,7 +39,7 @@ class AgentBase:
         self.input_dim = input_dim
         self._duplicate = _duplicate
 
-        # check for next availiable version
+        # check for next available version
         self.rewards_file = None
         self.save_output = save_output
         self._version = None
@@ -65,7 +73,7 @@ class AgentBase:
         raise NotImplementedError
 
     @property
-    def version(self) -> None | int:
+    def version(self) -> int | None:
         return self._version
 
     @version.setter
@@ -89,7 +97,7 @@ class AgentBase:
 
     #
     
-    def save_reward(self, reward: int):
+    def save_reward(self, reward: float):
         ...
 
     def get_action(self, observation, max_inputs:int = -1):
