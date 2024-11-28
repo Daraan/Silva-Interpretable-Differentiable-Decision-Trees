@@ -1,7 +1,25 @@
 # Created by Andrew Silva on 2/21/19
+from __future__ import annotations
+
+import functools
+from typing import Any, TYPE_CHECKING, Dict
+
+import gymnasium.envs.registration
+from ray.rllib.algorithms.ppo.ppo_catalog import PPOCatalog
+from ray.rllib.core.models.base import ACTOR, ENCODER_OUT, CRITIC, ActorCriticEncoder, Encoder
+from ray.rllib.core.models.catalog import Catalog
+from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
+from ray.rllib.utils.framework import TensorType
+from ray.rllib.core.models.configs import (
+    ActorCriticEncoderConfig,
+    ModelConfig,
+)
 import torch.nn as nn
 import torch
 import numpy as np
+
+if TYPE_CHECKING:
+    import gymnasium as gym
 
 
 class DDT(nn.Module):
@@ -13,6 +31,7 @@ class DDT(nn.Module):
                  output_dim=None,
                  alpha=1.0,
                  is_value=False,
+                # single_value=False,
                  use_gpu=False):
         super(DDT, self).__init__()
         """
@@ -175,7 +194,9 @@ class DDT(nn.Module):
         self.action_probs = nn.Parameter(labels)
 
     def forward(self, input_data, embedding_list=None):
-
+        if isinstance(input_data, dict):
+            input_data = input_data['obs']
+        
         input_data = input_data.t().expand(self.layers.size(0), *input_data.t().size())
 
         input_data = input_data.permute(2, 0, 1)
@@ -220,3 +241,90 @@ class DDT(nn.Module):
             return self.softmax(actions)
         else:
             return actions
+
+if False:
+    #class DDTEcnoder(Encoder): ...
+
+    class DDTActorCriticEncoderConfig(ModelConfig):
+        def build(self, framework: str = "torch") -> "Encoder":
+            assert framework == "torch"
+            return DDTActorCriticModel(self)
+
+    class DDTActorCriticEncoder(ActorCriticEncoder): ...
+        
+class NoEncoder(Encoder):
+
+    def _forward(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """No encoder is used return inputs in an ActorCriticEncoder output form"""
+        return {
+            ENCODER_OUT: {
+                ACTOR: inputs,
+                **({} if self.config.inference_only else {CRITIC: inputs}),
+            }
+        }
+        
+    def get_num_parameters(self):
+        return 0, 0
+
+class DDTCatalog(Catalog):
+    
+    def __init__(
+        self,
+        observation_space: gym.Space,
+        action_space: gym.Space,
+        model_config_dict: dict,
+    ):
+        """Initializes the PPOCatalog.
+
+        Args:
+            observation_space: The observation space of the Encoder.
+            action_space: The action space for the Pi Head.
+            model_config_dict: The model config to use.
+        """
+        super().__init__(
+            observation_space=observation_space,
+            action_space=action_space,
+            model_config_dict=model_config_dict,
+        )
+        
+        
+        
+    def build_actor_critic_encoder(self, framework: str) -> ActorCriticEncoder:
+        """Builds the ActorCriticEncoder.
+
+        The default behavior is to build the encoder from the encoder_config.
+        This can be overridden to build a custom ActorCriticEncoder as a means of
+        configuring the behavior of a PPORLModule implementation.
+
+        Args:
+            framework: The framework to use. Either "torch" or "tf2".
+
+        Returns:
+            The ActorCriticEncoder.
+        """
+        
+        return NoEncoder()
+        
+    def build_pi_head(self, framework: str):
+        # return DDT
+        return None
+        
+    def build_vf_head(self, framework: str):
+        # can use self.vf_head_config
+        # or just returm the value network after using DDTAgent
+        return None
+        return DDT(
+            output_dim=1,
+            is_value=True,
+        )
+
+        
+    def _determine_components_hook(self) -> None:
+        """Hook to determine the components of the model."""
+        # We do not need an encoder
+
+        # Create a function that can be called when framework is known to retrieve the
+        # class type for action distributions
+        self._action_dist_class_fn = functools.partial(
+            self._get_dist_cls_from_action_space, action_space=self.action_space
+        )

@@ -1,6 +1,12 @@
 # Created by Andrew Silva on 8/28/19
 from __future__ import annotations
 
+import gymnasium
+from ray.rllib.algorithms.ppo import PPO, PPOConfig, PPOTorchPolicy
+from ray.rllib.models.modelv2 import ModelConfigDict
+from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
+from ray.rllib.utils.framework import TensorType
+from ray.rllib.utils.replay_buffers import ReplayBuffer, StorageUnit
 import torch
 from torch import nn
 from ._agent_interface import AgentBase
@@ -8,9 +14,11 @@ from interpretable_ddts.agents.ddt import DDT
 from interpretable_ddts.opt_helpers import replay_buffer, ppo_update
 import os
 import numpy as np
-from typing import Optional, Union
+from typing import Literal, Optional, Union, TYPE_CHECKING
 from pathlib import Path
 
+if TYPE_CHECKING:
+    import gymnasium.envs.registration
 
 def save_ddt(fn, model):
     checkpoint = dict()
@@ -38,6 +46,7 @@ def load_ddt(fn):
                     leaves=model_data['leaf_init_information'],
                     alpha=model_data['alpha'].item(),
                     is_value=model_data['is_value'])
+    # NOTE: what about output dim?
     new_model.action_probs = model_data['action_probs']
     return new_model
 
@@ -166,7 +175,7 @@ class DDTAgent(AgentBase):
             msg = f"No such file or directory:' {act_fn}'"
             raise FileNotFoundError(msg)
 
-    def __getstate__(self):
+    def __getstate__X(self):
         return {
             'action_network': self.action_network,
             'value_network': self.value_network,
@@ -178,7 +187,7 @@ class DDTAgent(AgentBase):
             'num_rules': self.num_rules
         }
 
-    def __setstate__(self, state):
+    def __setstate__X(self, state):
         for key in state:
             setattr(self, key, state[key])
 
@@ -206,5 +215,133 @@ class DDTAgent(AgentBase):
                              _duplicate=True,
                              use_gpu=False  # <-----
                              )
-        new_agent.__setstate__(self.__getstate__())
+        new_agent.__setstate__X(self.__getstate__X())
         return new_agent
+
+
+class PPOConfigDDT(PPOConfig):
+    custom_model: str = "DDT"
+
+
+    def __post_init__(self):
+        super().__post_init__()
+        self["model"] = {"custom_model": self.custom_model}
+    
+
+class RLlibDDT(DDTAgent, TorchModelV2, nn.Module):
+    # Note that this class by itself is not a valid model unless you inherit from nn.Module and implement forward() in a subclass.
+
+    # ModelV2
+    obs_space: gymnasium.spaces.Space
+    action_space: gymnasium.spaces.Space
+    num_outputs: int
+    model_config: ModelConfigDict
+    name: str | Literal["default_model"]
+
+    def __init__(
+        self,
+        obs_space: gymnasium.spaces.Space,
+        action_space: gymnasium.spaces.Space,
+        num_outputs: int,
+        model_config: dict,
+        name: str,
+    ):
+        ddt_agent_kwargs = model_config["custom_model_config"]["ddt_agent_config"]
+        nn.Module.__init__(self)
+        DDTAgent.__init__(self, **ddt_agent_kwargs)
+        delattr(self, "replay_buffer")
+        self.replay_buffer = ReplayBuffer(capacity=1, storage_unit=StorageUnit.EPISODES)
+        TorchModelV2.__init__(self, obs_space, action_space, num_outputs, model_config, name)
+
+    def forward(
+        self,
+        input_dict: dict[str, TensorType],
+        state: list,
+        seq_lens: TensorType,
+    ) -> tuple[TensorType, list[TensorType]]:
+        probs = self.action_network(input_dict["obs"])
+        value_pred = self.value_network(input_dict["obs"])
+        # check https://docs.ray.io/en/releases-2.10.0/rllib/rllib-models.html#custom-pytorch-models
+        #probs = probs.view(-1).cpu()
+        #probs = probs.squeeze(0).cpu()
+        #self.last_value_pred = value_pred.squeeze(0)[input_dict["actions"]]
+        # Note: value pred is softmax over actions
+        self.last_value_pred = value_pred.sum(axis=1)
+        self.full_probs = probs
+        if self.action_network.input_dim > 30:
+            top_probs, inds = torch.topk(probs, 3)
+            return top_probs, []
+        return probs, []
+        #return super().forward(input_dict, state, seq_lens)
+    
+    def value_function(self):
+        """ "
+        Returns the value function output for the most recent forward pass.
+
+        Returns:
+            Value estimate tensor of shape [BATCH].
+        """
+        # Note: afterwards the batch, dim is removed.
+        #self.model.value_function()[0].item()
+        #print(self.last_value_pred)
+        return self.last_value_pred
+    
+class SilvaPPO(PPO):
+    def get_default_policy_class(self, config):
+        return SilvaPPOPolicy
+    
+class SilvaPPOPolicy(PPOTorchPolicy):    
+    @staticmethod
+    def policy_compute_actions(policy,
+                        obs_batch,
+                        state_batches,
+                        prev_action_batch=None,
+                        prev_reward_batch=None,
+                        info_batch=None,
+                        episodes=None,
+                        **kwargs):
+        with torch.no_grad():
+            obs = torch.Tensor(observation)
+            obs = obs.view(1, -1)
+            policy.last_state = obs
+
+            probs = policy.action_network(obs)
+            value_pred = policy.value_network(obs)
+            probs_v = probs.view(-1).cpu()  # not equivalent to squeeze if multiple ops
+            probs_s = probs.squeeze(0).cpu()  # this flattens the array
+            assert probs_v.shape == probs_s.shape
+            probs = probs_s
+            
+            policy.full_probs = probs
+            if policy.action_network.input_dim > max_inputs:
+                probs, inds = torch.topk(probs, 3)
+            m = Categorical(probs)
+            action = m.sample()
+            log_probs = m.log_prob(action)
+            policy.last_action_probs = log_probs.cpu()
+            policy.last_value_pred = value_pred.view(-1).cpu()
+
+            if policy.action_network.input_dim > max_inputs:
+                policy.last_action = inds[action].cpu()
+            else:
+                policy.last_action = action.cpu()
+        if policy.action_network.input_dim > max_inputs:
+            action = inds[action].item()
+        else:
+            action = action.item()
+        return action
+
+    @staticmethod
+    def policy_action_sampler_fn(
+                policy: PPOTorchPolicy,
+                model:RLlibDDT,
+                obs_batch: dict[str, TensorType],
+                state_batches: Optional[list[TensorType]],
+                explore: Optional[bool],
+                timestep: Optional[int],
+        
+            ):
+        with torch.no_grad():
+            ... # TODO # XXX
+        
+        return actions, logp, dist_inputs, state_out

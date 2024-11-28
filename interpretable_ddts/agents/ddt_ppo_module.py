@@ -1,0 +1,172 @@
+from __future__ import annotations
+
+from typing import Any, Dict, Optional, TYPE_CHECKING, Union
+
+import numpy as np
+from ray.rllib import SampleBatch
+from ray.rllib.algorithms.ppo.ppo_rl_module import PPORLModule
+from ray.rllib.algorithms.ppo.torch.ppo_torch_rl_module import PPOTorchRLModule
+from ray.rllib.core.models.base import ACTOR, CRITIC, ENCODER_OUT
+from ray.rllib.core.rl_module.rl_module import RLModule, RLModuleConfig
+
+from ray.rllib.utils.deprecation import DEPRECATED_VALUE
+import torch
+from torch.distributions import Categorical
+from interpretable_ddts.agents.ddt import DDT
+
+if TYPE_CHECKING:
+    from ray.rllib.core.rl_module.default_model_config import DefaultModelConfig
+    import gymnasium as gym
+
+def init_rule_list(num_rules, dim_in, dim_out):
+    weights = np.random.rand(num_rules, dim_in)
+    leaves = []
+    comparators = np.random.rand(num_rules, 1)
+    for leaf_index in range(num_rules):
+        leaves.append([[leaf_index], np.arange(0, leaf_index).tolist(), np.random.rand(dim_out)])
+    leaves.append([[], np.arange(0, num_rules).tolist(), np.random.rand(dim_out)])
+    return weights, comparators, leaves
+
+
+class DDTModule(PPOTorchRLModule):
+    observation_space: gym.Space
+    action_space: gym.Space
+    config: RLModuleConfig
+    model_config: Optional[Union[dict, DefaultModelConfig]]
+
+    def __init__(
+        self,
+        config: RLModuleConfig=DEPRECATED_VALUE,  # type: ignore  # use -1 here to avoid errors
+        *,
+        observation_space: Optional[gym.Space] = None,
+        action_space: Optional[gym.Space] = None,
+        inference_only: Optional[bool] = None,
+        learner_only: bool = False,
+        model_config: Optional[dict] = None,
+        catalog_class=None,
+    ) -> None:
+        if config and config != DEPRECATED_VALUE:
+            super().__init__(
+                config,
+                observation_space=observation_space,
+                action_space=action_space,
+                inference_only=inference_only,
+                learner_only=learner_only,
+                model_config=model_config,
+                catalog_class=catalog_class,
+            )
+        else:
+            super().__init__(
+                observation_space=observation_space,
+                action_space=action_space,
+                inference_only=inference_only,
+                learner_only=learner_only,
+                model_config=model_config,
+                catalog_class=catalog_class,
+            )
+
+    def setup(self) -> None:
+        #super().setup() # Will 
+        print(self.model_config)
+        assert isinstance(self.model_config, dict)
+        ddt_config = self.model_config["custom_model_config"]["ddt_agent_config"]
+        
+        self.bot_name = ddt_config["bot_name"] + '_'
+        num_rules = ddt_config["num_rules"]
+        rule_list = ddt_config["rule_list"]
+        input_dim = self.observation_space.shape[0]  # type: ignore
+        output_dim = int(self.action_space.n)  # type: ignore
+        if rule_list:
+            if str(num_rules) + '_rules' not in self.bot_name:
+                self.bot_name += str(num_rules)+'_rules'
+            init_weights, init_comparators, init_leaves = init_rule_list(
+                num_rules, input_dim, output_dim
+            )
+        else:
+            init_weights = None
+            init_comparators = None
+            init_leaves = num_rules
+            if str(num_rules) + '_leaves' not in self.bot_name:
+                self.bot_name += str(num_rules) + '_leaves'
+        
+        # TODO: use Catalog to setup networks or overwrite encoder and heads
+        self.action_network = DDT(
+            input_dim=input_dim,
+            output_dim=output_dim,
+            weights=init_weights,
+            comparators=init_comparators,
+            leaves=init_leaves,
+            alpha=1,
+            is_value=False,
+            use_gpu=ddt_config["use_gpu"],
+        )
+        self.value_network = DDT(
+            input_dim=input_dim,
+            output_dim=1,
+            weights=init_weights,
+            comparators=init_comparators,
+            leaves=ddt_config["num_rules"],
+            alpha=1,
+            is_value=True,
+            use_gpu=ddt_config["use_gpu"],
+        )
+        self.vf = self.value_network
+        self.pi = self.action_network
+
+        self._max_inputs = 10
+        
+    def encoder(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """No encoder is used return inputs in an ActorCriticEncoder output form"""
+        return {
+            ENCODER_OUT: {
+                ACTOR: inputs,
+                **({} if self.config.inference_only else {CRITIC: inputs}),
+            }
+        }
+
+    def _forward_train(self, batch: Dict[str, Any] | SampleBatch, **kwargs) -> Dict[str, Any]:
+        return super()._forward_train(batch, **kwargs)
+        
+    def _forward_explorationX(self, batch, **kwargs):
+        with torch.no_grad():
+            obs = torch.Tensor(batch["obs"])
+            obs = obs.view(1, -1)
+            self.last_state = obs
+
+            probs = self.action_network(obs)
+            value_pred = self.value_network(obs)
+            # probs_v = probs.view(-1).cpu()  # not equivalent to squeeze if multiple ops
+            #probs = probs.squeeze(0)#.cpu()  # this flattens the array
+            if self.action_network.input_dim <= self._max_inputs:
+                # default
+                return {
+                    "action_dist_inputs": probs,
+                }
+            # sample
+            self.full_probs = probs
+            probs, inds = torch.topk(probs, 3)
+            adj_probs = torch.zeros_like(self.full_probs)
+            adj_probs[inds] = probs
+            return {
+                "action_dist_inputs": adj_probs.unsqueeze(0),
+            }
+            probs = adj_probs
+            m = Categorical(adj_probs)
+            action = m.sample()
+            log_probs = m.log_prob(action)
+            self.last_action_probs = log_probs.cpu()
+            self.last_value_pred = value_pred.view(-1).cpu()
+
+            if self.action_network.input_dim > self._max_inputs:
+                self.last_action = inds[action].cpu()
+            else:
+                self.last_action = action.cpu()
+            if self.action_network.input_dim > self._max_inputs:
+                action = inds[action]#.item()
+            #else:
+            #    action = action.item()
+            return {
+                "actions": action.unsqueeze(-1),  # actions will be used as-is (no sampling step!)
+                #    "action_dist_inputs": ...  # optional: If provided, will be used to compute action probs and logp.
+            }
+        
