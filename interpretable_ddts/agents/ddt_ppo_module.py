@@ -90,6 +90,7 @@ class DDTModule(PPOTorchRLModule):
                 self.bot_name += str(num_rules) + '_leaves'
         
         # TODO: use Catalog to setup networks or overwrite encoder and heads
+        # Use is_value=True to NOT apply the softmax and return logits
         self.action_network = DDT(
             input_dim=input_dim,
             output_dim=output_dim,
@@ -97,7 +98,7 @@ class DDTModule(PPOTorchRLModule):
             comparators=init_comparators,
             leaves=init_leaves,
             alpha=1,
-            is_value=False,
+            is_value=True,
             use_gpu=ddt_config["use_gpu"],
         )
         self.value_network = DDT(

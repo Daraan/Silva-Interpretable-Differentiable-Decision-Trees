@@ -61,7 +61,6 @@ if __name__ == "__main__":
     else:
         raise Exception('No valid environment selected')
 
-
     # Create a single agent RL module spec.
     module_spec = RLModuleSpec(
         module_class=DDTModule,
@@ -122,19 +121,19 @@ if __name__ == "__main__":
         # lr=[
         #    [0, 1e-5],  # <- initial value at timestep 0
         #    [1000000, 1e-4],  # <- final value at 1M timesteps
-        #],
+        # ],
         clip_param=0.2,
         grad_clip=0.5,
+        # grad_clip_by="norm",
         entropy_coeff=0.01,
-        #train_batch_size=32, old API
+        # train_batch_size=32, old API
         train_batch_size_per_learner=36,
-        
-        #The total effective batch size is then
-        #`num_learners` x `train_batch_size_per_learner` and you can
-        #access it with the property `AlgorithmConfig.total_train_batch_size`.
-        
+        # The total effective batch size is then
+        # `num_learners` x `train_batch_size_per_learner` and you can
+        # access it with the property `AlgorithmConfig.total_train_batch_size`.
         minibatch_size=8,
-        #num_epochs=1000,
+        num_epochs=20,
+        use_kl_loss=False,
     ).rl_module(
         rl_module_spec=module_spec,
     )

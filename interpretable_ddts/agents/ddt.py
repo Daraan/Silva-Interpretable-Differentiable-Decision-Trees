@@ -315,7 +315,7 @@ class DDTCatalog(Catalog):
         return None
         return DDT(
             output_dim=1,
-            is_value=True,
+            is_value=False,
         )
 
         

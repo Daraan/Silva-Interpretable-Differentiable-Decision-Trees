@@ -164,6 +164,11 @@ def create_df_index(metadata: Iterable[dict[str, str]]):
 
 
 def seed_everything(env, seed, torch_manual=False):
+    """
+    Args:
+        torch_manual: If True, will set torch.manual_seed and torch.cuda.manual_seed_all
+            In some cases setting this causes bad models, so it is False by default
+    """
     random.seed(seed)
     np.random.seed(seed)
     # os.environ["PYTHONHASHSEED"] = str(seed)
