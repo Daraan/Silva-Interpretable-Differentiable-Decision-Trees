@@ -56,7 +56,6 @@ def run_episode(q, env: gym.Env, agent_in: AgentBase, ENV_NAME: str, seed: Optio
         agent.save_reward(reward)
         if done:
             break
-    #env.close()
     reward_sum = np.sum(agent.replay_buffer.rewards_list)
     rewards_list, advantage_list, deeper_advantage_list = discount_reward(agent.replay_buffer.rewards_list,
                                                                           agent.replay_buffer.value_list,
@@ -108,7 +107,6 @@ def main(episodes, agent: Union[DDTAgent, MLPAgent], ENV_NAME, seed=None, pbar=N
         print("Running agent ", agent.bot_name, " version ", agent.version)
         pbar = tqdm(range(1, episodes + 1), miniters=10)
     for episode in pbar:
-        reward = 0
         returned_object = run_episode(
             None,
             env=env,
@@ -117,7 +115,7 @@ def main(episodes, agent: Union[DDTAgent, MLPAgent], ENV_NAME, seed=None, pbar=N
             render_mode=render_mode,
             seed=None,
         )
-        reward += returned_object[0]
+        reward = returned_object[0]
         running_reward_array.append(returned_object[0])
         agent.replay_buffer.extend(returned_object[1])
         if (
@@ -129,12 +127,14 @@ def main(episodes, agent: Union[DDTAgent, MLPAgent], ENV_NAME, seed=None, pbar=N
 
         running_reward = sum(running_reward_array[-100:]) / float(min(100.0, len(running_reward_array)))
         if episode % 2 == 0:
-            pbar.set_description(f"{agent.bot_name}_v{agent.version} | Episode {episode}  Last Reward: {reward:.2f}  Average Reward: {running_reward:.2f}")
+            pbar.set_description(
+                f"{agent.bot_name}_v{agent.version} | Ep. {episode:<4} | Rwrd: {reward:.2f} | Avg. Rwrd: {running_reward:.2f} | Len {returned_object[1]['steps']}"
+            )
         if episode % 500 == 0:
             agent.save(models_path / f"{episode}th")
     # Save final episode
     if episode % 50 != 0:
-        pbar.set_description(f"Episode {episode}  Last Reward: {reward}  Average Reward: {running_reward}")
+        f"{agent.bot_name}_v{agent.version} | Ep. {episode:<4} | Rwrd: {reward:.2f} | Avg. Rwrd: {running_reward:.2f} | Len {returned_object[1]['steps']}"
     if episode % 500 != 0:
         agent.save(models_path / f"{episode}th")
 

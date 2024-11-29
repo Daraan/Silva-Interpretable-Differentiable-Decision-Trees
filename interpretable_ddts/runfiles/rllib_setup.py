@@ -82,7 +82,7 @@ if __name__ == "__main__":
         },
         catalog_class=DDTCatalog,
     )
-    module = module_spec.build()
+    #module = module_spec.build()
 
     config = PPOConfig()
     config.environment(env)    

@@ -5,6 +5,12 @@ import torch.optim as optim
 from torch.distributions import Categorical
 import numpy as np
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from interpretable_ddts.opt_helpers.replay_buffer import (
+        ReplayBufferSingleAgent as SilvaReplayBuffer,
+    )
 
 class PPO:
     def __init__(self, actor_critic_arr, two_nets=True, use_gpu=False):
@@ -12,9 +18,9 @@ class PPO:
         lr = 1e-3
         eps = 1e-5
         self.clip_param = 0.2
-        self.ppo_epoch = 32
-        self.num_mini_batch = 4
-        self.value_loss_coef = 0.5
+        self.ppo_epoch = 32  # Unused
+        self.num_mini_batch = 4  # Unused
+        self.value_loss_coef = 0.5  # Unused
         self.entropy_coef = 0.01
         self.max_grad_norm = 0.5
         self.use_gpu = use_gpu
@@ -33,7 +39,7 @@ class PPO:
         self.two_nets = two_nets
         self.epoch_counter = 0
 
-    def batch_updates(self, rollouts, agent_in):
+    def batch_updates(self, rollouts: "SilvaReplayBuffer", agent_in):
         if self.actor.input_dim < 10:
             batch_size = max(rollouts.step // 16, 1)
             num_iters = rollouts.step // batch_size
@@ -76,7 +82,6 @@ class PPO:
             update_m = Categorical(new_action_probs)
             update_log_probs = update_m.log_prob(action_taken)
             action_indices = [int(action_ind.item()) for action_ind in action_taken]
-            new_value = new_value[np.arange(0, len(new_value)), action_indices]
             entropy = update_m.entropy().mean().mul(self.entropy_coef)
 
             # PPO Updates
@@ -88,6 +93,7 @@ class PPO:
             # action_loss = (torch.sum(torch.mul(update_log_probs, adv_targ).mul(-1), -1))
             if self.use_gpu:
                 reward = reward.cuda()
+            new_value = new_value[np.arange(0, len(new_value)), action_indices]
             value_loss = F.mse_loss(reward, new_value)
 
             total_value_loss = total_value_loss.add(value_loss)
