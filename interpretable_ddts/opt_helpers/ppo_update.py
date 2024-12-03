@@ -85,7 +85,11 @@ class PPO:
             entropy = update_m.entropy().mean().mul(self.entropy_coef)
 
             # PPO Updates
-            ratio = torch.exp(update_log_probs - action_probs)
+            # ratio of difference between new and old action probabilities
+            # Clip ratio difference difference to [1-e, 1+e]
+            # XXX: Possible mistake, logit - prob
+            # ratio = torch.exp(update_log_probs - action_probs)
+            ratio = torch.exp(update_log_probs) - action_probs
             surr1 = ratio * adv_targ
             surr2 = torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
             action_loss = -torch.min(surr1, surr2).mean()
