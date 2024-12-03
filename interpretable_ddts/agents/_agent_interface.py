@@ -100,7 +100,7 @@ class AgentBase:
     def save_reward(self, reward: float):
         ...
 
-    def get_action(self, observation, max_inputs:int = -1):
+    def get_action(self, observation, max_inputs:int = 10):
         with torch.no_grad():
             obs = torch.Tensor(observation)
             obs = obs.view(1, -1)

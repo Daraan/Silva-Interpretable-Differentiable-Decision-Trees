@@ -7,12 +7,17 @@ from ray.rllib import SampleBatch
 from ray.rllib.algorithms.ppo.ppo_rl_module import PPORLModule
 from ray.rllib.algorithms.ppo.torch.ppo_torch_rl_module import PPOTorchRLModule
 from ray.rllib.core.models.base import ACTOR, CRITIC, ENCODER_OUT
-from ray.rllib.core.rl_module.rl_module import RLModule, RLModuleConfig
+from ray.rllib.core.rl_module.rl_module import RLModuleConfig
 
 from ray.rllib.utils.deprecation import DEPRECATED_VALUE
 import torch
 from torch.distributions import Categorical
+from interpretable_ddts.agents._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt import DDT
+from interpretable_ddts.opt_helpers import ppo_update
+from interpretable_ddts.opt_helpers.replay_buffer import (
+    ReplayBufferSingleAgent as SilvaReplayBuffer,
+)
 
 if TYPE_CHECKING:
     from ray.rllib.core.rl_module.default_model_config import DefaultModelConfig
@@ -171,3 +176,46 @@ class DDTModule(PPOTorchRLModule):
                 #    "action_dist_inputs": ...  # optional: If provided, will be used to compute action probs and logp.
             }
         
+
+class DDTModuleGymRunner(DDTModule, AgentBase):
+    
+    @property
+    def action_network(self):
+        return self.pi
+    
+    @property
+    def value_network(self):
+        return self.vf
+    
+    def save_reward(self, reward):
+        self.replay_buffer.insert(
+            obs=[self.last_state],
+            action_log_probs=self.last_action_probs,
+            value_preds=self.last_value_pred[self.last_action.item()],
+            last_action=self.last_action.item(),
+            full_probs_vector=self.full_probs,
+            rewards=reward,
+        )
+        return True
+    
+    def setup(self, duplicate=False) -> None:
+        super().setup(action_use_softmax=True)
+        self.rewards_file = None
+        self._version = None
+        self._duplicate = duplicate
+        self.save_output = self.model_config["custom_model_config"]["save_output"]
+        self.replay_buffer = SilvaReplayBuffer()
+        self.reward_history = []
+        self._check_version()
+        
+        self.ppo = ppo_update.PPO([self.action_network, self.value_network], two_nets=True, use_gpu=False)
+        self.num_steps = 0
+        
+    def _write_hparams(self):
+        pass
+    
+    def save(self, path):
+        pass
+    
+    def duplicate(self):
+        return self

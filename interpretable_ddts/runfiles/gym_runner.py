@@ -5,9 +5,12 @@ from pathlib import Path
 from typing import Optional, Union, Any, cast
 import gymnasium as gym
 import numpy as np
+from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 import torch
 from interpretable_ddts.agents._agent_interface import AgentBase
+from interpretable_ddts.agents.ddt import DDTCatalog
 from interpretable_ddts.agents.ddt_agent import DDTAgent
+from interpretable_ddts.agents.ddt_ppo_module import DDTModuleGymRunner
 from interpretable_ddts.agents.mlp_agent import MLPAgent
 from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
 from joblib import Parallel, delayed
@@ -212,6 +215,31 @@ if __name__ == "__main__":
                                     output_dim=dim_out,
                                     num_hidden=args.num_hidden,
                                     save_output=not args.test)
+        elif AGENT_TYPE == "rllib":
+            module_spec = RLModuleSpec(
+                module_class=DDTModuleGymRunner,
+                observation_space=init_env.observation_space,
+                action_space=init_env.action_space,
+                model_config={
+                    # "custom_model": RLlibDDT,
+                    "custom_model_config": {
+                        "ddt_agent_config": {
+                            "bot_name": AGENT_TYPE + ENV_TYPE,
+                            "input_dim": dim_in,
+                            "output_dim": dim_out,
+                            "rule_list": args.rule_list,
+                            "num_rules": args.num_leaves,
+                            "save_output": not args.test,
+                            "use_gpu": USE_GPU,
+                            "vf_double_output": True,
+                        },
+                    "save_output": not args.test,
+                    },
+                },
+                catalog_class=DDTCatalog,
+            )
+            policy_agent = module_spec.build()
+            policy_agent.setup()
         else:
             raise Exception('No valid network selected')
         pbar = tqdm(
