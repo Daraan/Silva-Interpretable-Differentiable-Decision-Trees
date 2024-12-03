@@ -77,7 +77,8 @@ if __name__ == "__main__":
                     "num_rules": args.num_leaves,
                     "save_output": not args.test,
                     "use_gpu": USE_GPU,
-                }
+                    "vf_double_output": True,
+                },
             },
         },
         catalog_class=DDTCatalog,

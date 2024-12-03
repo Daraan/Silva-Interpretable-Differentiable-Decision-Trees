@@ -234,6 +234,7 @@ if __name__ == "__main__":
                             "save_output": not args.test,
                             "use_gpu": USE_GPU,
                             "vf_double_output": True,
+                            "action_use_softmax": True,
                         },
                     "save_output": not args.test,
                     },

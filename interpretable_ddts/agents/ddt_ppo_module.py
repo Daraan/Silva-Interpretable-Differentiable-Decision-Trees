@@ -78,8 +78,7 @@ class DDTModule(PPOTorchRLModule):
             )
 
     def setup(self) -> None:
-        #super().setup() # Will 
-        print(self.model_config)
+        #super().setup() # Might create more modules, e.g. encoder
         assert isinstance(self.model_config, dict)
         ddt_config = self.model_config["custom_model_config"]["ddt_agent_config"]
         
@@ -110,12 +109,14 @@ class DDTModule(PPOTorchRLModule):
             comparators=init_comparators,
             leaves=init_leaves,
             alpha=1,
-            is_value=True,
+            # For rllib should return logits
+            # for Silva should return probs
+            is_value=not ddt_config.get("action_use_softmax", False),
             use_gpu=ddt_config["use_gpu"],
         )
         self.value_network = DDT(
             input_dim=input_dim,
-            output_dim=1,
+            output_dim=1 if not ddt_config["vf_double_output"] else 2,
             weights=init_weights,
             comparators=init_comparators,
             leaves=ddt_config["num_rules"],
@@ -206,7 +207,7 @@ class DDTModuleGymRunner(DDTModule, AgentBase):
         return True
     
     def setup(self, duplicate=False) -> None:
-        super().setup(action_use_softmax=True)
+        super().setup()
         self.rewards_file = None
         self._version = None
         self._duplicate = duplicate
