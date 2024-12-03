@@ -67,7 +67,7 @@ def run_episode(q, env: gym.Env, agent_in: AgentBase, ENV_NAME: str, seed: Optio
     agent.replay_buffer.advantage_list = advantage_list
     agent.replay_buffer.deeper_advantage_list = deeper_advantage_list
 
-    to_return = [reward_sum, copy.deepcopy(agent.replay_buffer.__getstate__())]
+    to_return = (reward_sum, copy.deepcopy(agent.replay_buffer.__getstate__()))
     if q is not None:
         try:
             q.put(to_return)
@@ -131,13 +131,15 @@ def main(episodes, agent: Union[DDTAgent, MLPAgent], ENV_NAME, seed=None, pbar=N
         running_reward = sum(running_reward_array[-100:]) / float(min(100.0, len(running_reward_array)))
         if episode % 2 == 0:
             pbar.set_description(
-                f"{agent.bot_name}_v{agent.version} | Ep. {episode:<4} | Rwrd: {reward:.2f} | Avg. Rwrd: {running_reward:.2f} | Len {returned_object[1]['steps']}"
+                f"{agent.bot_name}_v{agent.version} |Ep. {episode:<4} |Rwrd: {reward:>4.0f} |Avg. Rwrd: {running_reward:>4.0f} |Len {returned_object[1]['steps']:>3}"
             )
         if episode % 500 == 0:
             agent.save(models_path / f"{episode}th")
     # Save final episode
     if episode % 50 != 0:
-        f"{agent.bot_name}_v{agent.version} | Ep. {episode:<4} | Rwrd: {reward:.2f} | Avg. Rwrd: {running_reward:.2f} | Len {returned_object[1]['steps']}"
+            pbar.set_description(
+                f"{agent.bot_name}_v{agent.version} |Ep. {episode:<4} |Rwrd: {reward:>4.0f} |Avg. Rwrd: {running_reward:>4.0f} |Len {returned_object[1]['steps']:>3}"
+            )
     if episode % 500 != 0:
         agent.save(models_path / f"{episode}th")
 

@@ -46,8 +46,8 @@ class PPO:
         else:
             num_iters = 4
             batch_size = 8
-        total_action_loss = torch.Tensor([0])
-        total_value_loss = torch.Tensor([0])
+        #total_action_loss = torch.Tensor([0])
+        #total_value_loss = torch.Tensor([0])
         for iteration in range(num_iters):
             total_action_loss = torch.Tensor([0])
             total_value_loss = torch.Tensor([0])

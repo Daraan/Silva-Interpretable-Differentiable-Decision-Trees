@@ -9,7 +9,7 @@ from ray.rllib.algorithms.ppo.torch.ppo_torch_rl_module import PPOTorchRLModule
 from ray.rllib.core.models.base import ACTOR, CRITIC, ENCODER_OUT
 from ray.rllib.core.rl_module.rl_module import RLModuleConfig
 
-from ray.rllib.utils.deprecation import DEPRECATED_VALUE
+from ray.rllib.utils.deprecation import DEPRECATED_VALUE, logger as _deprecation_logger
 import torch
 from torch.distributions import Categorical
 from interpretable_ddts.agents._agent_interface import AgentBase
@@ -18,6 +18,14 @@ from interpretable_ddts.opt_helpers import ppo_update
 from interpretable_ddts.opt_helpers.replay_buffer import (
     ReplayBufferSingleAgent as SilvaReplayBuffer,
 )
+
+# This suppresses a deprecation warning from RLModuleConfig
+import logging
+__old_level = _deprecation_logger.getEffectiveLevel()
+_deprecation_logger.setLevel(logging.ERROR)
+RLModuleConfig()
+_deprecation_logger.setLevel(__old_level)
+
 
 if TYPE_CHECKING:
     from ray.rllib.core.rl_module.default_model_config import DefaultModelConfig
@@ -31,7 +39,6 @@ def init_rule_list(num_rules, dim_in, dim_out):
         leaves.append([[leaf_index], np.arange(0, leaf_index).tolist(), np.random.rand(dim_out)])
     leaves.append([[], np.arange(0, num_rules).tolist(), np.random.rand(dim_out)])
     return weights, comparators, leaves
-
 
 class DDTModule(PPOTorchRLModule):
     observation_space: gym.Space
