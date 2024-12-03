@@ -112,7 +112,10 @@ if __name__ == "__main__":
     else:
         config.rollouts(num_rollout_workers=0 if args.not_parallel else 8)
     config.framework("torch").training(
-        # learner_class= , # 
+        learner_class=SilvaLearner,  #
+        learner_config_dict={
+            "use_silva_loss" : True
+        },
         gamma=0.99,
         use_critic=True,
         # with a growing number of Learners and to increase the learning rate as follows:
