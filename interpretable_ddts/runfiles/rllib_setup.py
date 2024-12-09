@@ -122,12 +122,15 @@ if __name__ == "__main__":
         use_critic=True,
         # with a growing number of Learners and to increase the learning rate as follows:
         # lr = [original_lr] * ([num_learners] ** 0.5)
-        lr=1e-3,
-        # Sheduled LR
-        # lr=[
-        #    [0, 1e-5],  # <- initial value at timestep 0
-        #    [1000000, 1e-4],  # <- final value at 1M timesteps
-        # ],
+        lr=1e-3
+            if False else
+            # Shedule LR
+            [
+                [0, 8e-3],  # <- initial value at timestep 0
+                [100, 4e-3],
+                [400, 1e-3],
+                [800, 1e-4],
+            ],
         clip_param=0.2,
         grad_clip=0.5,
         # grad_clip_by="norm",
@@ -248,12 +251,30 @@ if __name__ == "__main__":
         return result
 
     # result.keys()
-    # dict_keys(['timers', 'env_runners', 
-    # 'num_agent_steps_sampled_lifetime', 'num_env_steps_sampled_lifetime', 'num_episodes_lifetime', 
-    # 'learners', 'num_env_steps_trained_lifetime', 'fault_tolerance', 'done', 'training_iteration', 
-    # 'trial_id', 'date', 'timestamp', 
-    # 'time_this_iter_s', 'time_total_s', 
+    # dict_keys(['timers', 'env_runners',
+    # 'num_agent_steps_sampled_lifetime', 'num_env_steps_sampled_lifetime', 'num_episodes_lifetime',
+    # 'learners', 'num_env_steps_trained_lifetime', 'fault_tolerance', 'done', 'training_iteration',
+    # 'trial_id', 'date', 'timestamp',
+    # 'time_this_iter_s', 'time_total_s',
     # 'pid', 'hostname', 'node_ip', 'config', 'time_since_restore', 'iterations_since_restore', 'perf'])
+
+    if False:
+        import joblib
+        from joblib import Parallel, delayed
+        from ray.util.joblib import register_ray
+        register_ray()
+        ray.init(address="local") # should be auto if started externally
+        N_JOBS = 1
+        with joblib.parallel_backend('ray'):
+            print("Start train")
+            data = Parallel(n_jobs=N_JOBS, pre_dispatch="all")(
+                delayed(build_and_train)(i, True) for i in range(N_JOBS)
+            )
+    # Start dashboard
+    if False:
+        context = ray.init()
+        print(context.dashboard_url)
+
     # note config will be passed as first positional argument
     if False:
         module_spec.module_class = DDTModuleGymRunner
@@ -289,6 +310,10 @@ if __name__ == "__main__":
     else:
         trainable = partial(build_and_train, use_pbar=True)
     N_JOBS = 10
+    # Will use these resources per job
+    trainable_with_resources = tune.with_resources(trainable, tune.PlacementGroupFactory(
+        [{'CPU': 2.0}] + [{'CPU': 1.0}] * 1
+    ))
     tune.Tuner(
         trainable,
         # "PPO",
