@@ -98,6 +98,9 @@ class AgentBase:
     #
     
     def save_reward(self, reward: float):
+        raise NotImplementedError
+
+    def save(self, path: str):
         ...
 
     def get_action(self, observation, max_inputs:int = 10):
@@ -128,7 +131,6 @@ class AgentBase:
             action = action.item()
         return action
 
-    
     def end_episode(self, timesteps):
         assert self.version is not None and self.rewards_file
         self.reward_history.append(timesteps)

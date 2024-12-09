@@ -8,8 +8,11 @@ from ray.rllib.algorithms.ppo.ppo_rl_module import PPORLModule
 from ray.rllib.algorithms.ppo.torch.ppo_torch_rl_module import PPOTorchRLModule
 from ray.rllib.core.models.base import ACTOR, CRITIC, ENCODER_OUT
 from ray.rllib.core.rl_module.rl_module import RLModuleConfig
-
 from ray.rllib.utils.deprecation import DEPRECATED_VALUE, logger as _deprecation_logger
+from ray.rllib.utils.metrics import EPISODE_RETURN_MEAN
+
+import ray.train
+
 import torch
 from torch.distributions import Categorical
 from interpretable_ddts.agents._agent_interface import AgentBase
@@ -100,7 +103,6 @@ class DDTModule(PPOTorchRLModule):
             if str(num_rules) + '_leaves' not in self.bot_name:
                 self.bot_name += str(num_rules) + '_leaves'
         
-        # TODO: use Catalog to setup networks or overwrite encoder and heads
         # Use is_value=True to NOT apply the softmax and return logits
         self.action_network = DDT(
             input_dim=input_dim,
@@ -227,3 +229,12 @@ class DDTModuleGymRunner(DDTModule, AgentBase):
     
     def duplicate(self):
         return self
+
+    def end_episode(self, reward):
+        AgentBase.end_episode(self, reward)
+        ray.train.report(
+            checkpoint=None,
+            metrics={
+                EPISODE_RETURN_MEAN: reward
+            },
+        )

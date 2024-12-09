@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Union, Any, cast
+from typing import Iterable, Optional, Union, Any, cast
 import gymnasium as gym
 import numpy as np
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
-import torch
+
 from interpretable_ddts.agents._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt import DDTCatalog
 from interpretable_ddts.agents.ddt_agent import DDTAgent
@@ -33,9 +33,9 @@ GYM_V_0_26 = GYM_VERSION >= Version("0.26")
 """First gymnasium version"""
 GYM_V1 = GYM_VERSION >= Version("1.0.0")
 
-def run_episode(q, env: gym.Env, agent_in: AgentBase, ENV_NAME: str, seed: Optional[int]=0, render_mode=None) -> tuple[float, dict[str, Any]]:
+def run_episode(q, env: gym.Env, agent_in: AgentBase, seed: Optional[int]=0, render_mode=None) -> tuple[float, dict[str, Any]]:
     agent = agent_in.duplicate()
-    
+
     # docstring: returns an initial observation.
     # If the environment already has a random number generator and reset is called with seed=None, the RNG should not be reset.
     # Moreover, reset should (in the typical use case) be called with an integer seed right after initialization and then never again.
@@ -77,23 +77,32 @@ def run_episode(q, env: gym.Env, agent_in: AgentBase, ENV_NAME: str, seed: Optio
     return to_return
 
 
-def main(episodes, agent: Union[DDTAgent, MLPAgent], ENV_NAME, seed=None, pbar=None, render_mode=None):
+def main(
+    episodes,
+    agent: Union[DDTAgent, MLPAgent, AgentBase],
+    env: str | gym.Env,
+    seed=None,
+    pbar: bool | Iterable[int]=True,
+    render_mode=None,
+):
     running_reward_array = []
-    models_path = Path("../models") / (agent.bot_name + f"_v{agent.version}")
-    rewards_path = Path('../txts')
     if agent.save_output:
+        models_path = Path("../models") / (agent.bot_name + f"_v{agent.version}")
+        rewards_path = Path('../txts')
         models_path.mkdir(parents=True, exist_ok=True)
         rewards_path.mkdir(parents=True, exist_ok=True)
-    # Create a link to the rewards file
-    if agent.save_output:
+        # Create a link to the rewards file
         (models_path / agent.rewards_file.name).symlink_to(agent.rewards_file.resolve())
-    
-    if ENV_NAME == "lunar":
-        env = gym.make("LunarLander-v2", render_mode=render_mode)
-    elif ENV_NAME == "cart":
-        env = gym.make("CartPole-v1", render_mode=render_mode)
+
+    if isinstance(env, str):
+        if env == "lunar":
+            env = gym.make("LunarLander-v2", render_mode=render_mode)
+        elif env == "cart":
+            env = gym.make("CartPole-v1", render_mode=render_mode)
+        else:
+            env = gym.make(env, render_mode=render_mode)
     else:
-        raise Exception("No valid environment selected")
+        assert env.render_mode == render_mode, "Render mode mismatch"
     if render_mode is not None:
         env = RecordVideo(
             env,
@@ -105,16 +114,21 @@ def main(episodes, agent: Union[DDTAgent, MLPAgent], ENV_NAME, seed=None, pbar=N
     seed_everything(env, seed)
     if GYM_V_0_26:
         env.reset(seed=seed)
-    
-    if pbar is None:
+
+    if pbar is True:
         print("Running agent ", agent.bot_name, " version ", agent.version)
         pbar = tqdm(range(1, episodes + 1), miniters=10)
+        use_pbar = True
+    elif not pbar:
+        pbar = range(1, episodes + 1)
+        use_pbar = False
+    else:
+        use_pbar = True
     for episode in pbar:
         returned_object = run_episode(
             None,
             env=env,
             agent_in=agent,
-            ENV_NAME=ENV_NAME,
             render_mode=render_mode,
             seed=None,
         )
@@ -122,28 +136,108 @@ def main(episodes, agent: Union[DDTAgent, MLPAgent], ENV_NAME, seed=None, pbar=N
         running_reward_array.append(returned_object[0])
         agent.replay_buffer.extend(returned_object[1])
         if (
-            (reward >= 499 or (ENV_NAME == "lunar" and reward >= 0)) 
+            agent.save_output
+            and (reward >= 499 or (env == "lunar" and reward >= 0))
             and episode % 500 != 0  # saved below
         ):
             agent.save(models_path / f"{episode}th")
         agent.end_episode(reward)
 
         running_reward = sum(running_reward_array[-100:]) / float(min(100.0, len(running_reward_array)))
-        if episode % 2 == 0:
+        if use_pbar and episode % 2 == 0:
             pbar.set_description(
                 f"{agent.bot_name}_v{agent.version} |Ep. {episode:<4} |Rwrd: {reward:>4.0f} |Avg. Rwrd: {running_reward:>4.0f} |Len {returned_object[1]['steps']:>3}"
             )
-        if episode % 500 == 0:
+        if agent.save_output and episode % 500 == 0:
             agent.save(models_path / f"{episode}th")
     # Save final episode
-    if episode % 50 != 0:
-            pbar.set_description(
-                f"{agent.bot_name}_v{agent.version} |Ep. {episode:<4} |Rwrd: {reward:>4.0f} |Avg. Rwrd: {running_reward:>4.0f} |Len {returned_object[1]['steps']:>3}"
-            )
-    if episode % 500 != 0:
+    if use_pbar and episode % 50 != 0:
+        pbar.set_description(
+            f"{agent.bot_name}_v{agent.version} |Ep. {episode:<4} |Rwrd: {reward:>4.0f} |Avg. Rwrd: {running_reward:>4.0f} |Len {returned_object[1]['steps']:>3}"
+        )
+    if agent.save_output and episode % 500 != 0:
         agent.save(models_path / f"{episode}th")
 
     return running_reward_array
+
+
+def start_process(i, args: argparse.Namespace, init_env=None):
+    """
+    Wrapper of main that can be used in parallel.
+    """
+    if isinstance(i, dict):
+        # rllib config pass
+        pass
+    elif i > 0:  # delay the start for file existence checks
+        time.sleep(i / 2)
+    agent_type: str | RLModuleSpec = args.agent_type
+    if agent_type == "rllib":
+        print(init_env)
+        assert init_env
+    env_type: str = args.env_type
+    seed: Optional[int] = args.seed
+    # Initialize with different seed
+    if isinstance(i, int) and False:
+        sub_seed = seed + i if seed is not None else None
+        seed_everything(None, sub_seed, torch_manual=False)
+    seed2 = np.random.randint(0, 1000000)
+    if isinstance(agent_type, RLModuleSpec):
+        bot_name = "rllib" + env_type
+    else:
+        bot_name = agent_type + env_type
+    if args.gpu:
+        bot_name += "GPU"
+    if agent_type == "ddt":
+        policy_agent = DDTAgent(
+            bot_name=bot_name,
+            input_dim=args.dim_in,
+            output_dim=args.dim_out,
+            rule_list=args.rule_list,
+            num_rules=args.num_leaves,
+            save_output=not args.test,
+        )
+    elif agent_type == "mlp":
+        policy_agent = MLPAgent(
+            bot_name=bot_name,
+            input_dim=args.dim_in,
+            output_dim=args.dim_out,
+            num_hidden=args.num_hidden,
+            save_output=not args.test,
+        )
+    elif agent_type == "rllib":
+        policy_agent = create_rlib_agent(args, init_env)
+    elif isinstance(agent_type, RLModuleSpec):
+        policy_agent = agent_type.build()
+        policy_agent.setup()
+    else:
+        raise Exception("No valid network selected")
+    use_pbar = getattr(args, "use_pbar", True)
+    if use_pbar:
+        if isinstance(use_pbar, type):
+            pbar = use_pbar(range(1, args.episodes + 1))
+        else:
+            pbar = tqdm(
+                range(1, args.episodes + 1),
+                miniters=10,
+                mininterval=0.2,
+                maxinterval=1,
+                position=i + (args.process_number % 5) * 5,
+                postfix="Process " + str(i + (args.process_number * 5)),
+            )
+    else:
+        pbar = False
+    reward_array = main(
+        args.episodes,
+        policy_agent,
+        args.env_type,
+        seed=seed2,
+        pbar=pbar,
+        render_mode=args.render_mode,
+    )
+    return {
+        "running_reward_mean" : np.mean(reward_array[-100:]),
+        "perfect_episodes" : sum([1 for r in reward_array if r >= 499])
+    }
 
 
 if __name__ == "__main__":
@@ -160,7 +254,7 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--process_number", help="Process number", type=int, default=0)
     parser.add_argument("--silent", help="supress prints", action="store_true", default=False,)
     parser.add_argument("--test", "--dry-run", help="Do not save any models", action="store_true", default=False)
-    parser.add_argument("--render_mode", "-rm", help="Render the environment", 
+    parser.add_argument("--render_mode", "-rm", help="Render the environment",
                         type=str, default=None, const="human", nargs='?')
 
     args = parser.parse_args()
@@ -187,78 +281,18 @@ if __name__ == "__main__":
         env = "CartPole-v1"
     else:
         raise Exception('No valid environment selected')
+    args.dim_in = dim_in
+    args.dim_out = dim_out
 
     if not args.silent:
         print(f"Agent {AGENT_TYPE} on {ENV_TYPE} seed {SEED}")
     # mp.set_start_method('spawn')
-    mp.set_sharing_strategy('file_system')
-    torch.backends.cudnn.deterministic = True
+    # mp.set_sharing_strategy('file_system')
+    #torch.backends.cudnn.deterministic = True
 
-    def start_process(i):
-        if i > 0:  # delay the start for file existence checks
-            time.sleep(i/2)
-        # Initialize with different seed
-        sub_seed = SEED + i if SEED is not None else None
-        seed_everything(None, sub_seed, torch_manual=False)
-        seed2 = np.random.randint(0, 1000000)
-        bot_name = AGENT_TYPE + ENV_TYPE
-        if USE_GPU:
-            bot_name += 'GPU'
-        if AGENT_TYPE == 'ddt':
-            policy_agent = DDTAgent(bot_name=bot_name,
-                                    input_dim=dim_in,
-                                    output_dim=dim_out,
-                                    rule_list=args.rule_list,
-                                    num_rules=args.num_leaves,
-                                    save_output=not args.test)
-        elif AGENT_TYPE == 'mlp':
-            policy_agent = MLPAgent(input_dim=dim_in,
-                                    bot_name=bot_name,
-                                    output_dim=dim_out,
-                                    num_hidden=args.num_hidden,
-                                    save_output=not args.test)
-        elif AGENT_TYPE == "rllib":
-            module_spec = RLModuleSpec(
-                module_class=DDTModuleGymRunner,
-                observation_space=init_env.observation_space,
-                action_space=init_env.action_space,
-                model_config={
-                    # "custom_model": RLlibDDT,
-                    "custom_model_config": {
-                        "ddt_agent_config": {
-                            "bot_name": AGENT_TYPE + ENV_TYPE,
-                            "input_dim": dim_in,
-                            "output_dim": dim_out,
-                            "rule_list": args.rule_list,
-                            "num_rules": args.num_leaves,
-                            "save_output": not args.test,
-                            "use_gpu": USE_GPU,
-                            "vf_double_output": True,
-                            "action_use_softmax": True,
-                        },
-                    "save_output": not args.test,
-                    },
-                },
-                catalog_class=DDTCatalog,
-            )
-            policy_agent = module_spec.build()
-            policy_agent.setup()
-        else:
-            raise Exception('No valid network selected')
-        pbar = tqdm(
-            range(1, NUM_EPS + 1),
-            miniters=10,
-            mininterval=0.2,
-            maxinterval=1,
-            position=i + (args.process_number % 5) * 5,
-            postfix="Process " + str(i + (args.process_number * 5)),
-        )
-        reward_array = main(NUM_EPS, policy_agent, ENV_TYPE, seed=seed2, pbar=pbar, render_mode=args.render_mode)
-        return reward_array
-    
     if not args.not_parallel:
         data = Parallel(n_jobs=5, pre_dispatch="all")(
-            delayed(start_process)(i) for i in range(5)
+            delayed(start_process)(i, args, init_env) for i in range(5)
         )
     else:
-        data = [start_process(0) for _ in range(5)]
+        data = [start_process(0, args, init_env) for _ in range(5)]

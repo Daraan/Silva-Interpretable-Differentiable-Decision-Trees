@@ -46,9 +46,7 @@ class PPO:
         else:
             num_iters = 4
             batch_size = 8
-        #total_action_loss = torch.Tensor([0])
-        #total_value_loss = torch.Tensor([0])
-        for iteration in range(num_iters):
+        for _iteration in range(num_iters):
             total_action_loss = torch.Tensor([0])
             total_value_loss = torch.Tensor([0])
             if self.use_gpu:
@@ -56,7 +54,7 @@ class PPO:
                 total_value_loss = total_value_loss.cuda()
 
             samples = [rollouts.sample() for _ in range(batch_size)]
-            samples = [sample for sample in samples if sample != False]
+            samples = [sample for sample in samples if sample is not False]
             if len(samples) <= 0:
                 continue
             state = torch.cat([sample['state'][0] for sample in samples], dim=0)

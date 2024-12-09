@@ -34,14 +34,14 @@ RE_PARSE_FILENAME = re.compile(
 class Result(NamedTuple):
     fn : str
     fuzzy_reward : float      # np.mean(reward_after_five)
-    fuzzy_reward_std : float  # np.std(reward_after_five), 
+    fuzzy_reward_std : float  # np.std(reward_after_five),
     discrete_reward : float     # np.mean(crispy_reward)
     discrete_reward_std: float  # np.std(crispy_reward)
 
 
 def evaluate_model(fn: str | Path, env: str, verbose: bool | int=1, count: Optional[tuple[int, int]]=None) -> Result | None:
     num_runs = 15
-    
+
     final_deep_actor_fn = os.path.join(MODEL_DIR, fn)
     try:
         fda = load_ddt(final_deep_actor_fn)
@@ -147,17 +147,17 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
     results_df = pd.DataFrame(all_results)
     results_df.index = create_df_index(metadata)
     results_df.sort_values("discrete_reward", ascending=False, inplace=True)
-    
+
     best_fuzzy_arg: int = results_df.fuzzy_reward.argmax()  # type: ignore
     best_arg: int = results_df.discrete_reward.argmax()  # type: ignore
-    
+
     max_fuzzy_reward = all_results[best_fuzzy_arg].fuzzy_reward
     max_fuzzy_std = all_results[best_fuzzy_arg].fuzzy_reward_std
     best_fuzzy_fn = all_results[best_fuzzy_arg].fn
     max_reward = all_results[best_arg].discrete_reward
     max_std = all_results[best_arg].discrete_reward_std
     best_fn = all_results[best_arg].fn
-    
+
     return (
         best_fuzzy_fn,
         best_fn,
@@ -167,7 +167,7 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
         max_std,
         results_df,
     )
-    
+
 def best_model_from_data(results: pd.DataFrame):
     best_fuzzy_arg = results.fuzzy_reward.idxmax()  # type: ignore
     best_arg = results.discrete_reward.idxmax()  # type: ignore
@@ -293,8 +293,8 @@ def test_model(discrete_fn: Path | str, seed=None, verbose:int=True, count: Opti
     filename = discrete_fn.name if isinstance(discrete_fn, Path) else discrete_fn
     # Run model
     (
-        avg_reward_diff, 
-        avg_reward_discrete, 
+        avg_reward_diff,
+        avg_reward_discrete,
         std_reward_discrete
     ) = run_a_model(filename, args, seed=seed, verbose=verbose)
     # Gather results
@@ -311,7 +311,7 @@ def test_model(discrete_fn: Path | str, seed=None, verbose:int=True, count: Opti
         int(header["episode"]),
     )
     return (index, (avg_reward_diff, avg_reward_discrete, std_reward_discrete))
-    
+
 
 if __name__ == "__main__":
     import argparse
@@ -340,7 +340,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--test", "--dry-run", help="Do not save any outputs", action="store_true", default=False
     )
-    
+
     args = parser.parse_args()
     if args.seed == -1:
         args.seed = None
