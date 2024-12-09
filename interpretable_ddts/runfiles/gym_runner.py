@@ -160,6 +160,33 @@ def main(
 
     return running_reward_array
 
+def create_rlib_agent(args, init_env):
+    module_spec = RLModuleSpec(
+        module_class=DDTModuleGymRunner,
+        observation_space=init_env.observation_space,
+        action_space=init_env.action_space,
+        model_config={
+            # "custom_model": RLlibDDT,
+            "custom_model_config": {
+                "ddt_agent_config": {
+                    "bot_name": AGENT_TYPE + ENV_TYPE,
+                    "input_dim": dim_in,
+                    "output_dim": dim_out,
+                    "rule_list": args.rule_list,
+                    "num_rules": args.num_leaves,
+                    "save_output": not args.test,
+                    "use_gpu": USE_GPU,
+                    "vf_double_output": True,
+                    "action_use_softmax": True,
+                },
+                "save_output": not args.test,
+            },
+        },
+        catalog_class=DDTCatalog,
+    )
+    policy_agent = module_spec.build()
+    policy_agent.setup()
+    return policy_agent
 
 def start_process(i, args: argparse.Namespace, init_env=None):
     """

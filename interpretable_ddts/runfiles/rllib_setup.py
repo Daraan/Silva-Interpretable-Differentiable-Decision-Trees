@@ -1,18 +1,28 @@
 import argparse
+from functools import partial
+import os
+from pathlib import Path
+import gymnasium as gym
 import ray
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
-from ray.rllib.algorithms.ppo.torch.ppo_torch_rl_module import (
-    PPOTorchRLModule
-)
 from ray.rllib.algorithms.ppo import PPOConfig
-from ray.rllib.algorithms.ppo.ppo_catalog import PPOCatalog
-import gymnasium as gym
-import torch
-from tqdm import trange
+from ray import tune, train
+from ray.tune import CLIReporter
+from ray.rllib.utils.metrics import (
+    ENV_RUNNER_RESULTS,
+    EPISODE_RETURN_MEAN,
+    EVALUATION_RESULTS,
+)
+from ray.experimental import tqdm_ray
 
 from interpretable_ddts.agents.ddt import DDTCatalog
-from interpretable_ddts.agents.ddt_ppo_module import DDTModule
+from interpretable_ddts.agents.ddt_ppo_module import DDTModule, DDTModuleGymRunner
 from packaging.version import parse as parse_version, Version
+
+from interpretable_ddts.agents.ppo_learner import SilvaLearner
+from interpretable_ddts.runfiles import gym_runner
+
+os.environ["RAY_COLOR_PREFIX"]="1"
 
 RAY_VERSION = parse_version(ray.__version__)
 
@@ -61,60 +71,52 @@ if __name__ == "__main__":
     else:
         raise Exception('No valid environment selected')
 
-    # Create a single agent RL module spec.
-    module_spec = RLModuleSpec(
-        module_class=DDTModule,
-        observation_space=init_env.observation_space,
-        action_space=init_env.action_space,
-        model_config={
-            #"custom_model": RLlibDDT,
-            "custom_model_config": {
-                "ddt_agent_config" : {
-                    "bot_name": AGENT_TYPE + ENV_TYPE,
-                    "input_dim": dim_in,
-                    "output_dim": dim_out,
-                    "rule_list": args.rule_list,
-                    "num_rules": args.num_leaves,
-                    "save_output": not args.test,
-                    "use_gpu": USE_GPU,
-                    "vf_double_output": True,
-                },
-            },
-        },
-        catalog_class=DDTCatalog,
-    )
-    #module = module_spec.build()
-
     config = PPOConfig()
-    config.environment(env)    
+    config.environment(env)
     config.api_stack(
         enable_rl_module_and_learner=True,
         enable_env_runner_and_connector_v2=True,
     )
     config.resources(
-        #num_gpus=1 if USE_GPU else 0,
+        #num_gpus=1 if USE_GPU else 0,4
+        # process that runs Algorithm.training_step() during Tune
         num_cpus_for_main_process=1,
         #num_learner_workers=0 if args.not_parallel else 4,
         #num_cpus_per_learner_worker=1,
         #num_cpus_per_worker=1,
     )
-    if hasattr(config, "env_runners"):
-        config.env_runners(
-            num_env_runners=0 if args.not_parallel else 8,
-            num_cpus_per_env_runner=1,  # num_cpus_per_worker
-            )
-        config.learners(
-            # for fractional GPUs, you should always set num_learners to 0 or 1
-            num_learners=0 if args.not_parallel else 4,
-            num_cpus_per_learner=1,
-            num_gpus_per_learner=1 if USE_GPU else 0,
-        )
-    else:
-        config.rollouts(num_rollout_workers=0 if args.not_parallel else 8)
+    config.env_runners(
+        num_env_runners=0 if args.not_parallel else 4,
+        num_cpus_per_env_runner=1,  # num_cpus_per_worker
+        explore=False,
+        # How long an rollout episode lasts, for "auto" calculated from batch_size
+        rollout_fragment_length=1,
+        num_envs_per_env_runner=4,
+        validate_env_runners_after_construction=args.test,
+
+        # 1) "truncate_episodes": Each call to `EnvRunner.sample()` returns a
+        #    batch of at most `rollout_fragment_length * num_envs_per_env_runner` in
+        #    size. The batch is exactly `rollout_fragment_length * num_envs`
+        #    in size if postprocessing does not change batch sizes.
+        # Use if not using GAE
+        # 2) "complete_episodes": Each call to `EnvRunner.sample()` returns a
+        #    batch of at least `rollout_fragment_length * num_envs_per_env_runner` in
+        #    size. Episodes aren't truncated, but multiple episodes
+        #    may be packed within one batch to meet the (minimum) batch size.
+        batch_mode="complete_episodes",
+    )
+    config.learners(
+        # for fractional GPUs, you should always set num_learners to 0 or 1
+        num_learners=0 if args.not_parallel else 4,
+        num_cpus_per_learner=1,
+        num_gpus_per_learner=1 if USE_GPU else 0,
+    )
+
+    USE_SILVA_LOSS = True
     config.framework("torch").training(
         learner_class=SilvaLearner,  #
         learner_config_dict={
-            "use_silva_loss" : True
+            "use_silva_loss" : USE_SILVA_LOSS
         },
         gamma=0.99,
         use_critic=True,
@@ -130,7 +132,7 @@ if __name__ == "__main__":
         grad_clip=0.5,
         # grad_clip_by="norm",
         entropy_coeff=0.01,
-        # train_batch_size=32, old API
+        #vf_clip_param=10,
         train_batch_size_per_learner=36,
         # The total effective batch size is then
         # `num_learners` x `train_batch_size_per_learner` and you can
@@ -138,31 +140,112 @@ if __name__ == "__main__":
         minibatch_size=8,
         num_epochs=20,
         use_kl_loss=False,
-    ).rl_module(
+        use_gae=False,
+    )
+        # Create a single agent RL module spec.
+    module_spec = RLModuleSpec(
+        module_class=DDTModule,
+        observation_space=init_env.observation_space,
+        action_space=init_env.action_space,
+        model_config={
+            #"custom_model": RLlibDDT,
+            "custom_model_config": {
+                "ddt_agent_config" : {
+                    "bot_name": AGENT_TYPE + ENV_TYPE,
+                    "input_dim": dim_in,
+                    "output_dim": dim_out,
+                    "rule_list": args.rule_list,
+                    "num_rules": args.num_leaves,
+                    "save_output": not args.test,
+                    "use_gpu": USE_GPU,
+                    "vf_double_output": USE_SILVA_LOSS,
+                    "action_use_softmax": USE_SILVA_LOSS,
+                },
+            },
+        },
+        catalog_class=DDTCatalog,
+    )
+    #module = module_spec.build()
+
+    config.rl_module(
         rl_module_spec=module_spec,
     )
-    if hasattr("config", "env_runners") or RAY_VERSION >= Version("2.20"):
-        config.evaluation(evaluation_num_env_runners=0)  # type: ignore
-    else:
-        config.evaluation(evaluation_num_workers=0)
-    algo = config.build()
+    # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.evaluation.html
+    config.evaluation(
+        evaluation_interval=0,
+        evaluation_duration=1,
+        evaluation_duration_unit="episodes",
+        evaluation_num_env_runners=0,
+        evaluation_config={
+            # NOTE: Policy gradient algorithms are able to find the optimal
+            # policy, even if this is a stochastic one. Setting "explore=False" here
+            # results in the evaluation workers not using this optimal policy!
+            "explore": False,
+        }
+    )
+
+    config.reporting(
+        keep_per_episode_custom_metrics=True,  # If True calculate max min mean
+        log_gradients=False,  # Default is True
+        # Will smooth metrics in the reports, e.g. tensorboard
+        metrics_num_episodes_for_smoothing=1,  # Default is 100
+    )
+    config.debugging(
+        # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.debugging.html#ray-rllib-algorithms-algorithm-config-algorithmconfig-debugging
+        #seed=SEED,
+    )
+    assert (
+        config.rl_module_spec.model_config["custom_model_config"]["ddt_agent_config"]["vf_double_output"]  # type: ignore
+        == config.learner_config_dict["use_silva_loss"]
+    )
+
     config.validate_train_batch_size_vs_rollout_fragment_length()
-    
-    # Start dashboard
-    if False:
-        context = ray.init()
-        print(context.dashboard_url)
-    
-    pbar = trange(args.episodes)
-    for i in pbar:
-        result = algo.train()
-        pbar.set_description(
-            f"Mean reward: {result['env_runners']['agent_episode_returns_mean']['default_agent']:.2f} |"
-            f"Max reward: {result['env_runners']['episode_return_max']:.0f} |"
-            f"Length Avg: {result['env_runners']['episode_len_mean']:.1f} |"
-            #f"Loss: {result['learners']['default_policy']['total_loss']:.2f}"
-        )
-    breakpoint()
+    def build_and_train(index=None, use_pbar=True):
+        algo = config.build()
+
+        if use_pbar:
+            pbar = tqdm_ray.tqdm(range(args.episodes), position=index)
+        else:
+            pbar = range(args.episodes)
+        _max_rewards = []
+        running_eval_rewards = []
+        for _episode in pbar:
+            result = algo.train()
+            metrics={
+                ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN: result[ENV_RUNNER_RESULTS].get(EPISODE_RETURN_MEAN, None),
+            }
+            if EVALUATION_RESULTS in result:
+                metrics[EVALUATION_RESULTS + "/" + ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN] = result[EVALUATION_RESULTS][ENV_RUNNER_RESULTS].get(EPISODE_RETURN_MEAN, None),
+
+            train.report(metrics)
+            if not use_pbar:
+                continue
+            eval_results = result.get(EVALUATION_RESULTS, {})
+            # In there, there is a sub-key: ENV_RUNNER_RESULTS.
+            eval_env_runner_results = eval_results.get(ENV_RUNNER_RESULTS)
+            if eval_env_runner_results is not None:
+                eval_mean = eval_env_runner_results.get(EPISODE_RETURN_MEAN)
+                if eval_mean:
+                    running_eval_rewards.append(eval_mean)
+                else:
+                    eval_mean = -1
+                running_eval_reward = sum(running_eval_rewards[-100:]) / min(100, len(running_eval_rewards))
+            else:
+                eval_mean = -1
+                running_eval_reward = -1
+            try:
+                pbar.set_description(
+                    f"Mean Rew: {result['env_runners']['episode_return_mean']:>5.1f} |"
+                    f"Max Rew: {result['env_runners']['episode_return_max']:>5.0f} |"
+                    f"Eval Rew: {eval_mean:>5.1f} |"
+                    f"Mean Eval Rew (100): {running_eval_reward:>5.1f} |"
+                    #f"Length Avg: {result['env_runners']['episode_len_mean']:.1f} |"
+                    # f"Loss: {result['learners']['default_policy']['total_loss']:.2f}"
+                )
+            except KeyError as e:
+                print(e)
+                pbar.set_description("")
+        return result
 
     # result.keys()
     # dict_keys(['timers', 'env_runners', 
@@ -171,3 +254,57 @@ if __name__ == "__main__":
     # 'trial_id', 'date', 'timestamp', 
     # 'time_this_iter_s', 'time_total_s', 
     # 'pid', 'hostname', 'node_ip', 'config', 'time_since_restore', 'iterations_since_restore', 'perf'])
+    # note config will be passed as first positional argument
+    if False:
+        module_spec.module_class = DDTModuleGymRunner
+        module_spec.model_config["custom_model_config"].update({
+            "save_output": False
+        })
+        module_spec.model_config["custom_model_config"]["ddt_agent_config"].update(
+            {
+                "save_output": not args.test,
+                "use_gpu": USE_GPU,
+                "vf_double_output": True,
+                "action_use_softmax": True,
+            }
+        )
+        trainable = partial(
+            gym_runner.start_process,
+            args=argparse.Namespace(
+                agent_type=module_spec,
+                env_type=config.env,
+                seed=SEED,
+                gpu=args.gpu,
+                rule_list=args.rule_list,
+                num_leaves=args.num_leaves,
+                test=args.test,
+                num_hidden=args.num_hidden,
+                use_pbar=tqdm_ray.tqdm,
+                episodes=args.episodes,
+                dim_in=dim_in,
+                dim_out=dim_out,
+                render_mode=None,
+            )
+        )
+    else:
+        trainable = partial(build_and_train, use_pbar=True)
+    N_JOBS = 10
+    tune.Tuner(
+        trainable,
+        # "PPO",
+        # run_config=air.RunConfig(stop={"training_iteration": 1}),
+        # param_space=config,
+        tune_config=tune.TuneConfig(
+            num_samples=N_JOBS,
+            #metric=
+            #    (EVALUATION_RESULTS + "/" + ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
+            #     if config.evaluation_interval else ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN),
+            mode="max"
+        ),
+        run_config=train.RunConfig(
+            storage_path=Path("../outputs").resolve(),  # type: ignore[argument]
+            name="test_experiment",
+            log_to_file=False,  # True for hydra like logging to files; or (stoud, stderr.log) files
+            progress_reporter=CLIReporter(mode="max", max_report_frequency=45),
+        ),
+    ).fit()
