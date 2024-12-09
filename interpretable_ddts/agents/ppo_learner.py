@@ -33,7 +33,7 @@ class SilvaLearner(PPOTorchLearner):
     ) -> TensorType:
         # Note fwd_out["embeddings"] likely == batch
         module = self.module[module_id].unwrapped()
-        use_silva_loss = self.config.learner_config_dict.get("use_silva_loss", True)
+        use_silva_loss = self.config.learner_config_dict["use_silva_loss"]
         
         if Columns.LOSS_MASK in batch:
             mask = batch[Columns.LOSS_MASK]
@@ -109,7 +109,6 @@ class SilvaLearner(PPOTorchLearner):
             * torch.clamp(logp_ratio, 1 - config.clip_param, 1 + config.clip_param),
         )
         # X Silva uses mean here
-        action_loss = -surrogate_loss.mean()
         
         # ----
 
@@ -148,9 +147,13 @@ class SilvaLearner(PPOTorchLearner):
             z = torch.tensor(0.0, device=surrogate_loss.device)
             value_fn_out = mean_vf_unclipped_loss = vf_loss_clipped = mean_vf_loss = z
 
-        total_loss = possibly_masked_mean(
-            -surrogate_loss + config.vf_loss_coeff * vf_loss_clipped - scaled_entropy
-        )
+        if use_silva_loss:
+            action_loss = -surrogate_loss.mean()
+            total_loss = action_loss - entropy + config.vf_loss_coeff * mean_vf_loss
+        else:
+            total_loss = possibly_masked_mean(
+                -surrogate_loss + config.vf_loss_coeff * vf_loss_clipped - scaled_entropy
+            )
         
         if config.use_kl_loss:
             total_loss += self.curr_kl_coeffs_per_module[module_id] * mean_kl_loss
