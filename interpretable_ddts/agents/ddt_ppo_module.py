@@ -83,11 +83,10 @@ class DDTModule(PPOTorchRLModule):
     def setup(self) -> None:
         #super().setup() # Might create more modules, e.g. encoder
         assert isinstance(self.model_config, dict)
-        ddt_config = self.model_config["custom_model_config"]["ddt_agent_config"]
         
-        self.bot_name = ddt_config["bot_name"] + '_'
-        num_rules = ddt_config["num_rules"]
-        rule_list = ddt_config["rule_list"]
+        self.bot_name = self.model_config["bot_name"] + '_'
+        num_rules = self.model_config["num_rules"]
+        rule_list = self.model_config["rule_list"]
         input_dim = self.observation_space.shape[0]  # type: ignore
         output_dim = int(self.action_space.n)  # type: ignore
         if rule_list:
@@ -113,18 +112,18 @@ class DDTModule(PPOTorchRLModule):
             alpha=1,
             # For rllib should return logits
             # for Silva should return probs
-            is_value=not ddt_config.get("action_use_softmax", False),
-            use_gpu=ddt_config["use_gpu"],
+            is_value=not self.model_config.get("action_use_softmax", False),
+            use_gpu=self.model_config["use_gpu"],
         )
         self.value_network = DDT(
             input_dim=input_dim,
-            output_dim=1 if not ddt_config["vf_double_output"] else 2,
+            output_dim=1 if not self.model_config["vf_double_output"] else 2,
             weights=init_weights,
             comparators=init_comparators,
-            leaves=ddt_config["num_rules"],
+            leaves=self.model_config["num_rules"],
             alpha=1,
             is_value=True,
-            use_gpu=ddt_config["use_gpu"],
+            use_gpu=self.model_config["use_gpu"],
         )
         self.vf = self.value_network
         self.pi = self.action_network
@@ -213,7 +212,7 @@ class DDTModuleGymRunner(DDTModule, AgentBase):
         self.rewards_file = None
         self._version = None
         self._duplicate = duplicate
-        self.save_output = self.model_config["custom_model_config"]["save_output"]
+        self.save_output = self.model_config["save_output"]
         self.replay_buffer = SilvaReplayBuffer()
         self.reward_history = []
         self._check_version()

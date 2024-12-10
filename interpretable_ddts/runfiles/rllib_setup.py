@@ -152,20 +152,16 @@ if __name__ == "__main__":
         observation_space=init_env.observation_space,
         action_space=init_env.action_space,
         model_config={
-            #"custom_model": RLlibDDT,
-            "custom_model_config": {
-                "ddt_agent_config" : {
-                    "bot_name": args.agent_type + args.env_type,
-                    "input_dim": dim_in,
-                    "output_dim": dim_out,
-                    "rule_list": args.rule_list,
-                    "num_rules": args.num_leaves,
-                    "save_output": not args.test,
-                    "use_gpu": args.gpu,
-                    "vf_double_output": USE_SILVA_LOSS,
-                    "action_use_softmax": USE_SILVA_LOSS,
-                },
-            },
+            "bot_name": args.agent_type + args.env_type,
+            "input_dim": dim_in,
+            "output_dim": dim_out,
+            "rule_list": args.rule_list,
+            "num_rules": args.num_leaves,
+            "save_output": not args.test,
+            "use_gpu": args.gpu,
+            "vf_double_output": USE_SILVA_LOSS,
+            "action_use_softmax": USE_SILVA_LOSS,
+            "use_silva_loss": USE_SILVA_LOSS,  # unused by model config
         },
         catalog_class=DDTCatalog,
     )
@@ -199,7 +195,7 @@ if __name__ == "__main__":
         #seed=args.seed,
     )
     assert (
-        config.rl_module_spec.model_config["custom_model_config"]["ddt_agent_config"]["vf_double_output"]  # type: ignore
+        config.rl_module_spec.model_config["vf_double_output"]  # type: ignore
         == config.learner_config_dict["use_silva_loss"]
     )
 
@@ -247,10 +243,10 @@ if __name__ == "__main__":
     # note config will be passed as first positional argument
     if False:
         module_spec.module_class = DDTModuleGymRunner
-        module_spec.model_config["custom_model_config"].update({
+        module_spec.model_config.update({
             "save_output": False
         })
-        module_spec.model_config["custom_model_config"]["ddt_agent_config"].update(
+        module_spec.model_config.update(
             {
                 "save_output": not args.test,
                 "use_gpu": args.gpu,

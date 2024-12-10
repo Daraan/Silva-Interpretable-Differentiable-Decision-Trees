@@ -246,9 +246,8 @@ class RLlibDDT(DDTAgent, TorchModelV2, nn.Module):
         model_config: dict,
         name: str,
     ):
-        ddt_agent_kwargs = model_config["custom_model_config"]["ddt_agent_config"]
         nn.Module.__init__(self)
-        DDTAgent.__init__(self, **ddt_agent_kwargs)
+        DDTAgent.__init__(self, **model_config)
         delattr(self, "replay_buffer")
         self.replay_buffer = ReplayBuffer(capacity=1, storage_unit=StorageUnit.EPISODES)
         TorchModelV2.__init__(self, obs_space, action_space, num_outputs, model_config, name)
