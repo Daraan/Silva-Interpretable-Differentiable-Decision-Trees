@@ -3,13 +3,16 @@ from functools import partial
 import math
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Optional
 import gymnasium as gym
 import ray
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray import tune, train
 from ray.tune import CLIReporter
+# NOTE: JSON, CSV, and Tensorboard loggers are created automatically by Tune
+from ray.tune.logger import JsonLoggerCallback, TBXLoggerCallback, CSVLoggerCallback  # noqa: F401
+from ray.air.integrations.wandb import WandbLoggerCallback, setup_wandb
 from ray.rllib.utils.metrics import (
     ENV_RUNNER_RESULTS,
     EPISODE_RETURN_MEAN,
@@ -44,6 +47,7 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--process_number", help="Process number", type=int, default=0)
     parser.add_argument("--silent", help="supress prints", action="store_true", default=False,)
     parser.add_argument("--test", "--dry-run", help="Do not save any models", action="store_true", default=False)
+    parser.add_argument("--wandb", "-wb", help="Log to WandB", action="store_true", default=False)
     parser.add_argument(
         "-rl",
         "--rllib",
@@ -69,6 +73,7 @@ if __name__ == "__main__":
         env = "CartPole-v1"
     else:
         raise Exception('No valid environment selected')
+    dim_int, dim_out = int(dim_in), int(dim_out)  # might be np
 
     config = PPOConfig()
     config.environment(env)
@@ -200,11 +205,15 @@ if __name__ == "__main__":
     )
 
     config.validate_train_batch_size_vs_rollout_fragment_length()
-    def build_and_train(index=None, use_pbar=True):
+    def build_and_train(index: Optional[int | dict[str, Any]]=None, use_pbar=True):
+        """
+        Args:
+            index: Is a `dict` / `param_spec` if this is used by Tune.
+        """
         algo = config.build()
 
         if use_pbar:
-            pbar = tqdm_ray.tqdm(range(args.episodes), position=index)
+            pbar = tqdm_ray.tqdm(range(args.episodes), position=index if isinstance(index, int) else None)
         else:
             pbar = range(args.episodes)
         running_eval_rewards = []
@@ -235,9 +244,10 @@ if __name__ == "__main__":
                     # f"Loss: {result['learners']['default_policy']['total_loss']:.2f}"
                 )
             except KeyError as e:
-                print(e)
+                print("Error with Key", e)
                 pbar.set_description("")
         eval_result = algo.evaluate()
+        eval_result["done"] = True
         return eval_result
 
     # note config will be passed as first positional argument
@@ -275,17 +285,44 @@ if __name__ == "__main__":
         )
     else:
         trainable = partial(build_and_train, use_pbar=True)
-    N_JOBS = 8
+    param_space = {
+        "algo" : config.algo_class.__name__,
+        "env" : str(config.env),
+        "model_config" : config.rl_module_spec.model_config,
+        "module": config.rl_module_spec.module_class.__name__,
+    }
+    param_space = {k: tune.choice([v]) for k, v in param_space.items()}
+
+    callbacks = []
+    if args.wandb:
+        callbacks.append(
+            WandbLoggerCallback(
+            project="SilvaWandB-Test",
+            group="test_experiment",  # if not set Tuner name is used
+            excludes=["system/*"],
+            upload_checkpoints=False,
+            save_code=False,  # Code diff
+            # For more keywords see: https://docs.wandb.ai/ref/python/init/
+            # Log gym
+            # https://docs.wandb.ai/guides/integrations/openai-gym/
+            monitor_gym=False,
+            # Special comment
+            notes="test save code",
+        ))
+    else:
+        # could use wandb offline
+        print("INFO: Not logging to WandB")
+    N_JOBS = 2
     # Will use these resources per job
     # NOTE: Even if not used will allocate these resources per run
     trainable_with_resources = tune.with_resources(trainable, tune.PlacementGroupFactory(
         [{'CPU': 1.0}] + [{'CPU': 1.0}] * (0 if args.not_parallel else 4)
     ))
     tune.Tuner(
-        trainable,
+        trainable,  # Note: possibly can also be a list
         # "PPO",
         # run_config=air.RunConfig(stop={"training_iteration": 1}),
-        # param_space=config,
+        param_space=param_space,
         tune_config=tune.TuneConfig(
             num_samples=N_JOBS,
             #metric=
@@ -294,9 +331,13 @@ if __name__ == "__main__":
             mode="max"
         ),
         run_config=train.RunConfig(
+            # Trial artifacts are uploaded periodically to this directory
             storage_path=Path("../outputs").resolve(),  # type: ignore[argument]
             name="test_experiment",
             log_to_file=False,  # True for hydra like logging to files; or (stoud, stderr.log) files
             progress_reporter=CLIReporter(mode="max", max_report_frequency=45),
+            # JSON, CSV, and Tensorboard loggers are created automatically by Tune
+            # to disable set TUNE_DISABLE_AUTO_CALLBACK_LOGGERS environment variable to "1"
+            callbacks=callbacks,
         ),
     ).fit()
