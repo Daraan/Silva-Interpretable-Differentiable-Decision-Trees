@@ -10,6 +10,8 @@ import pandas as pd
 import torch
 import numpy as np
 import os
+import gymnasium as gym
+
 from interpretable_ddts.opt_helpers.discretization import convert_to_discrete
 from interpretable_ddts.agents.ddt_agent import load_ddt, DDTAgent
 from interpretable_ddts.agents.ddt import DDT
@@ -39,8 +41,20 @@ class Result(NamedTuple):
     discrete_reward_std: float  # np.std(crispy_reward)
 
 
-def evaluate_model(fn: str | Path, env: str, verbose: bool | int=1, count: Optional[tuple[int, int]]=None) -> Result | None:
+def evaluate_model(fn: str | Path, env: str | gym.Env, verbose: bool | int=1, count: Optional[tuple[int, int]]=None, *, render_mode=None) -> Result | None:
     num_runs = 15
+
+    if not isinstance(env, gym.Env):
+        if env == "lunar":
+            gym_env = gym.make("LunarLander-v2", render_mode=render_mode)
+        elif env == "cart":
+            gym_env = gym.make("CartPole-v1", render_mode=render_mode)
+        elif env == "FindAndDefeatZerglings":
+            pass
+        else:
+            gym_env = gym.make(env, render_mode=render_mode)
+    else:
+        gym_env = env
 
     final_deep_actor_fn = os.path.join(MODEL_DIR, fn)
     try:
@@ -61,12 +75,12 @@ def evaluate_model(fn: str | Path, env: str, verbose: bool | int=1, count: Optio
     for _ in range(15):
         if env == "FindAndDefeatZerglings":
             try:
-                reward, replay_buffer = micro_episode(None, policy_agent, env)
+                reward, replay_buffer = micro_episode(None, policy_agent, game_mode=env)
             except Exception as e:
                 print(e)
                 continue
-        elif env in ['cart', 'lunar']:
-            reward, replay_buffer = gym_episode(None, policy_agent, env)
+        else:
+            reward, replay_buffer = gym_episode(None, gym_env, policy_agent, render_mode=render_mode)
         master_states.extend(replay_buffer['states'])
         reward_after_five.append(reward)
 
@@ -84,7 +98,7 @@ def evaluate_model(fn: str | Path, env: str, verbose: bool | int=1, count: Optio
                 crispy_out = -3
                 continue
         elif env in ['cart', 'lunar']:
-            crispy_out, replay_buffer = gym_episode(None, policy_agent, env)
+            crispy_out, replay_buffer = gym_episode(None, gym_env, policy_agent)
 
         crispy_reward.append(crispy_out)
     if verbose:
@@ -97,7 +111,13 @@ def evaluate_model(fn: str | Path, env: str, verbose: bool | int=1, count: Optio
         print(f"{'~'+str(count[0]):>7}/{count[1]}", end="\r", flush=True)
     else:
         print(".", end="", flush=True)
-    return Result(str(fn), np.mean(reward_after_five), np.std(reward_after_five), np.mean(crispy_reward), np.std(crispy_reward))
+    return Result(
+        str(fn),
+        np.mean(reward_after_five).item(),
+        np.std(reward_after_five).item(),
+        np.mean(crispy_reward).item(),
+        np.std(crispy_reward).item(),
+    )
 
 def search_for_good_model(env, n_jobs=5, verbose=1):
     # Be sure to comment out gym_runner.gym_episode env.render
@@ -187,7 +207,7 @@ def best_model_from_data(results: pd.DataFrame):
         max_std,
     )
 
-def run_a_model(fn: str, args_in: argparse.Namespace, seed: Optional[int]=0, verbose:int=1):
+def run_a_model(fn: str, args_in: argparse.Namespace, seed: Optional[int]=0, verbose:int=1, *, render_mode=None):
     num_runs = 15
     if 'cart' in fn:
         env = 'cart'
@@ -195,6 +215,17 @@ def run_a_model(fn: str, args_in: argparse.Namespace, seed: Optional[int]=0, ver
         env = 'lunar'
     elif 'FindAndDefeatZerglings' in fn:
         env = 'FindAndDefeatZerglings'
+    else:
+        raise ValueError(f"Unknown environment used in {fn}")
+    if not isinstance(env, gym.Env):
+        if env == "lunar":
+            gym_env = gym.make("LunarLander-v2", render_mode=render_mode)
+        elif env == "cart":
+            gym_env = gym.make("CartPole-v1", render_mode=render_mode)
+        elif env == "FindAndDefeatZerglings":
+            pass
+        else:
+            pass
     final_deep_actor_fn = os.path.join(MODEL_DIR, fn) if not fn.startswith(MODEL_DIR) else fn
     final_deep_critic_fn = os.path.join(MODEL_DIR, fn) if not fn.startswith(MODEL_DIR) else fn
 
@@ -215,10 +246,8 @@ def run_a_model(fn: str, args_in: argparse.Namespace, seed: Optional[int]=0, ver
     for _ in range(num_runs):
         if env == 'FindAndDefeatZerglings':
             reward, replay_buffer = micro_episode(None, policy_agent, game_mode=env)
-        elif env in ['cart', 'lunar']:
-            reward, replay_buffer = gym_episode(None, policy_agent, env)
         else:
-            raise ValueError(f"Unknown environment {env}")
+            reward, replay_buffer = gym_episode(None, gym_env, policy_agent)
         master_states.extend(replay_buffer['states'])
         master_actions.extend(replay_buffer['actions_taken'])
         reward_after_five += reward
@@ -255,11 +284,7 @@ def run_a_model(fn: str, args_in: argparse.Namespace, seed: Optional[int]=0, ver
         if env == 'FindAndDefeatZerglings':
             crispy_out, replay_buffer = micro_episode(None, policy_agent, game_mode=env)
         elif env in ['cart', 'lunar']:
-            if seed is None:
-                seed = np.random.RandomState().randint(100000)
-            torch.random.manual_seed(seed + i)
-            np.random.seed(seed + i)
-            crispy_out, replay_buffer = gym_episode(None, policy_agent, env, seed=seed+i)
+            crispy_out, replay_buffer = gym_episode(None, gym_env, policy_agent)
         crispy_reward.append(crispy_out)
 
     leaves = crispy_actor.leaf_init_information
@@ -411,7 +436,7 @@ if __name__ == "__main__":
             print("\n")
         else:
             results = [test_model(discrete_fn) for discrete_fn in models]
-        for (index, (avg_reward_diff, avg_reward_discrete, std_reward_discrete)) in results:
+        for index, (avg_reward_diff, avg_reward_discrete, std_reward_discrete) in results:
             results_df.loc[index, "test_diff_reward"] = round(avg_reward_diff, 3)
             results_df.loc[index, "test_disc_reward"] = round(avg_reward_discrete, 3)
             results_df.loc[index, "test_disc_std"] = round(std_reward_discrete, 3)

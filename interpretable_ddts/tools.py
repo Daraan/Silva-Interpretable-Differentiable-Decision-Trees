@@ -207,6 +207,9 @@ def seed_everything(env, seed: Optional[int], torch_manual=False):
         seed, next_seed = _split_seed(next_seed)
         env.action_space.seed(seed)
 
+    seed, next_seed = _split_seed(next_seed)
+    return seed, next_seed
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--clean", action="store_true")

@@ -34,7 +34,7 @@ GYM_V_0_26 = GYM_VERSION >= Version("0.26")
 """First gymnasium version"""
 GYM_V1 = GYM_VERSION >= Version("1.0.0")
 
-def run_episode(q, env: gym.Env, agent_in: AgentBase, seed: Optional[int]=0, render_mode=None) -> tuple[float, dict[str, Any]]:
+def run_episode(q, env: gym.Env, agent_in: AgentBase, *, render_mode=None) -> tuple[float, dict[str, Any]]:
     agent = agent_in.duplicate()
 
     # docstring: returns an initial observation.
@@ -42,7 +42,7 @@ def run_episode(q, env: gym.Env, agent_in: AgentBase, seed: Optional[int]=0, ren
     # Moreover, reset should (in the typical use case) be called with an integer seed right after initialization and then never again.
     # Reset environment and record the starting state
     if GYM_V_0_26:
-        state, info = env.reset(seed=seed)
+        state, _ = env.reset()
     else:
         state = env.reset()
 
@@ -112,9 +112,10 @@ def main(
             episode_trigger=lambda x: x % 250 == 0,
         )
         env = RecordEpisodeStatistics(env)
-    seed_everything(env, seed)
-    if GYM_V_0_26:
-        env.reset(seed=seed)
+    next_seed, _ = seed_everything(env, seed)
+    if GYM_V_0_26 and next_seed is not None:
+        # Note that with seed=None, the RNG for the environment will not be reset
+        env.reset(seed=next_seed)
 
     if pbar is True:
         print("Running agent ", agent.bot_name, " version ", agent.version)
@@ -131,7 +132,6 @@ def main(
             env=env,
             agent_in=agent,
             render_mode=render_mode,
-            seed=None,
         )
         reward = returned_object[0]
         running_reward_array.append(returned_object[0])
