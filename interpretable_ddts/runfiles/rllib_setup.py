@@ -1,4 +1,5 @@
 import argparse
+import logging
 import math
 import os
 from functools import partial
@@ -10,6 +11,7 @@ import ray
 from packaging.version import parse as parse_version
 from ray import train, tune
 from ray.air.integrations.wandb import WandbLoggerCallback, setup_wandb
+from ray.air.integrations.comet import CometLoggerCallback
 from ray.experimental import tqdm_ray
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
@@ -41,8 +43,9 @@ RAY_VERSION = parse_version(ray.__version__)
 TRAIN_METRIC_RETURN_MEAN = ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
 EVAL_METRIC_RETURN_MEAN = EVALUATION_RESULTS + "/" + ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
 
-_ConfigType = TypeVar("_ConfigType", bound=PPOConfig)
+logger = logging.getLogger(__name__)
 
+_ConfigType = TypeVar("_ConfigType", bound=PPOConfig)
 
 def create_ddt_config(
     args: argparse.Namespace, env: str | gym.Env, config_class: type[_ConfigType] = PPOConfig
@@ -202,6 +205,10 @@ if __name__ == "__main__":
     parser.add_argument("--test", "--dry-run", help="Do not save any models", action="store_true", default=False)
     parser.add_argument("--wandb", "-wb", help="Log to WandB", action="store_true", default=False)
     parser.add_argument(
+        "--comet", nargs="?", help="Log to Comet", const="1", default="1",
+        choices=["offline", "0", "1", "False", "off"]
+    )
+    parser.add_argument(
         "-rl",
         "--rllib",
         help="Use rllib",
@@ -210,6 +217,9 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    if args.comet.lower() in ("0", "false", "off"):
+        args.comet = False
+
     if args.seed == -1:
         args.seed = None
 
@@ -328,21 +338,42 @@ if __name__ == "__main__":
     if args.wandb:
         callbacks.append(
             WandbLoggerCallback(
-            project="SilvaWandB-Test",
-            group="test_experiment",  # if not set Tuner name is used
-            excludes=["system/*"],
-            upload_checkpoints=False,
-            save_code=False,  # Code diff
-            # For more keywords see: https://docs.wandb.ai/ref/python/init/
-            # Log gym
-            # https://docs.wandb.ai/guides/integrations/openai-gym/
-            monitor_gym=False,
-            # Special comment
-            notes="test save code",
-        ))
+                project="SilvaWandB-Test",
+                group="test_experiment",  # if not set Tuner name is used
+                excludes=["system/*"],
+                upload_checkpoints=False,
+                save_code=False,  # Code diff
+                # For more keywords see: https://docs.wandb.ai/ref/python/init/
+                # Log gym
+                # https://docs.wandb.ai/guides/integrations/openai-gym/
+                monitor_gym=False,
+                # Special comment
+                notes="test save code",
+            )
+        )
     else:
         # could use wandb offline
-        print("INFO: Not logging to WandB")
+        logger.info("Not logging to WandB")
+    if args.comet:
+        os.environ["COMET_API_KEY"] = "XXXX"  # or use keyword api_key
+        callbacks.append(
+            CometLoggerCallback(
+                disabled=args.comet == "offline",  # do not upload
+                save_checkpoints=False,
+                tags=["test", "dev"],
+                
+                # Other keywords see: https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment/
+                auto_metric_step_rate=10,  # How often batch metrics are logged
+                log_git_metadata=True,  # disabled by rllib
+                log_graph=True,  # Default True
+                #api_key=,
+                log_env_details=True,
+                auto_log_co2=False,  # needs codecarbon
+                auto_histogram_weight_logging=True,  # Default False
+                auto_histogram_gradient_logging=True,  # Default False
+                auto_histogram_activation_logging=True,  # Default False
+            )
+        )
     N_JOBS = 2
     # Will use these resources per job
     # NOTE: Even if not used will allocate these resources per run
