@@ -153,7 +153,7 @@ class DDTAgent(AgentBase):
     def save(self, fn: Union[Path, str]='last', *, force_save: bool=False):
         """
         force_save: Still saves the output even in `save_output` is False
-        """        
+        """
         assert self.version is not None
         if not (self.save_output or force_save):
             return
@@ -310,7 +310,7 @@ class SilvaPPOPolicy(PPOTorchPolicy):
             probs_s = probs.squeeze(0).cpu()  # this flattens the array
             assert probs_v.shape == probs_s.shape
             probs = probs_s
-            
+
             policy.full_probs = probs
             if policy.action_network.input_dim > max_inputs:
                 probs, inds = torch.topk(probs, 3)
@@ -338,9 +338,9 @@ class SilvaPPOPolicy(PPOTorchPolicy):
                 state_batches: Optional[list[TensorType]],
                 explore: Optional[bool],
                 timestep: Optional[int],
-        
+
             ):
         with torch.no_grad():
             ... # TODO # XXX
-        
+
         return actions, logp, dist_inputs, state_out

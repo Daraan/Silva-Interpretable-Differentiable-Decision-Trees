@@ -183,17 +183,22 @@ def create_ddt_config(
 if __name__ == "__main__":
     # full parser see: https://github.com/ray-project/ray/blob/master/rllib/utils/test_utils.py#L61
     parser = argparse.ArgumentParser()
-    parser.add_argument("-a", "--agent_type", help="architecture of agent to run", type=str, default='ddt')
+    parser.add_argument("-a", "--agent_type", help="architecture of agent to run", type=str, default="ddt")
     parser.add_argument("-e", "--episodes", help="how many episodes", type=int, default=1000)
     parser.add_argument("-l", "--num_leaves", help="number of leaves for DDT/DRL ", type=int, default=8)
     parser.add_argument("-n", "--num_hidden", help="number of hidden layers for MLP ", type=int, default=0)
-    parser.add_argument("-env", "--env_type", help="environment to run on", type=str, default='cart')
-    parser.add_argument("-gpu", "--gpu", help="run on GPU?", action='store_true')
-    parser.add_argument("-r", "--rule_list", help="Use rule list setup", action='store_true', default=False)
+    parser.add_argument("-env", "--env_type", help="environment to run on", type=str, default="cart")
+    parser.add_argument("-gpu", "--gpu", help="run on GPU?", action="store_true")
+    parser.add_argument("-r", "--rule_list", help="Use rule list setup", action="store_true", default=False)
     parser.add_argument("-s", "--seed", help="Seed", default=-1, type=int)
-    parser.add_argument("-np", "--not_parallel", help="Do not run in parallel", action='store_true', default=False)
+    parser.add_argument("-np", "--not_parallel", help="Do not run in parallel", action="store_true", default=False)
     parser.add_argument("-p", "--process_number", help="Process number", type=int, default=0)
-    parser.add_argument("--silent", help="supress prints", action="store_true", default=False,)
+    parser.add_argument(
+        "--silent",
+        help="supress prints",
+        action="store_true",
+        default=False,
+    )
     parser.add_argument("--test", "--dry-run", help="Do not save any models", action="store_true", default=False)
     parser.add_argument("--wandb", "-wb", help="Log to WandB", action="store_true", default=False)
     parser.add_argument(
@@ -268,8 +273,6 @@ if __name__ == "__main__":
                     f"Max Rew: {result['env_runners']['episode_return_max']:>4.0f} |"
                     f"Eval Rew: {eval_mean:>6.1f} |"
                     f"Rolling Eval Rew: {running_eval_reward:>6.1f} |"
-                    #f"Length Avg: {result['env_runners']['episode_len_mean']:.1f} |"
-                    # f"Loss: {result['learners']['default_policy']['total_loss']:.2f}"
                 )
             except KeyError as e:
                 print("Error with Key", e)
