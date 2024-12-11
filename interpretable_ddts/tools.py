@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import re
-from typing import Iterable, Literal, Union, Optional, TYPE_CHECKING
+from typing import Iterable, Literal, Union, Optional, TYPE_CHECKING, overload
 import pandas as pd
 import random
 import numpy as np
@@ -11,9 +11,9 @@ import torch
 import torch.cuda
 if TYPE_CHECKING:
     from pandas._typing import AggFuncTypeBase
-    
+
 import gymnasium as gym
-    
+
 from packaging.version import parse as parse_version, Version
 GYM_VERSION = parse_version(gym.__version__)
 
@@ -112,8 +112,8 @@ def load_output(
         ).sort_values(aggregate_column, ascending=False)
     )
     return agg_df
-    
-    
+
+
 def create_single_index(header: dict[str, str]):
     return pd.MultiIndex(
         (
@@ -135,7 +135,7 @@ def create_single_index(header: dict[str, str]):
             "episode",
         ],
     )
-    
+
 
 def create_df_index(metadata: Iterable[dict[str, str]]):
     return pd.MultiIndex.from_tuples(
@@ -163,35 +163,55 @@ def create_df_index(metadata: Iterable[dict[str, str]]):
     )
 
 
-def seed_everything(env, seed, torch_manual=False):
+@overload
+def _split_seed(seed: None) -> tuple[None, None]: ...
+
+@overload
+def _split_seed(seed: int) -> tuple[int, int]: ...
+
+def _split_seed(seed: Optional[int]) -> tuple[int, int] | tuple[None, None]:
+    if seed is None:
+        return None, None
+    gen = random.Random(seed)
+    return gen.randrange(2**32), gen.randrange(2**32)
+
+def seed_everything(env, seed: Optional[int], torch_manual=False):
     """
     Args:
         torch_manual: If True, will set torch.manual_seed and torch.cuda.manual_seed_all
             In some cases setting this causes bad models, so it is False by default
     """
+    # no not reuse seed if its not None
+    seed, next_seed = _split_seed(seed)
     random.seed(seed)
+
+    seed, next_seed = _split_seed(next_seed)
     np.random.seed(seed)
+
     # os.environ["PYTHONHASHSEED"] = str(seed)
-    if seed is None:
+    if next_seed is None:
         torch.seed()
         torch.cuda.seed()
     elif torch_manual:
+        seed, next_seed = _split_seed(next_seed)
         torch.manual_seed(
             seed
         )  # setting torch manual seed causes bad models, # ok seed 124
+        seed, next_seed = _split_seed(next_seed)
         torch.cuda.manual_seed_all(seed)
     #
     if env:
         if not GYM_V_0_26:  # gymnasium does not have this
+            seed, next_seed = _split_seed(next_seed)
             env.seed(seed)
+        seed, next_seed = _split_seed(next_seed)
         env.action_space.seed(seed)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--clean", action="store_true")
     args = parser.parse_args()
-    
+
     if args.clean:
         print("Cleaning up...")
         rewards_dir = Path("txts/")
@@ -214,5 +234,3 @@ if __name__ == "__main__":
                 file.unlink()
         else:
             print("Aborted")
-    
-                

@@ -47,10 +47,10 @@ def scatter_fuzzy_discrete(df: pd.DataFrame, ax=None, *, max_reward=500, **kwarg
         **kwargs,
     )
     min_reward = min(df["fuzzy_reward"].min(), df["discrete_reward"].min(), 0)
-    
+
     ax.set_ylim(min_reward - 10, max_reward + 10)
     ax.set_xlim(min_reward - 10, max_reward + 10)
-    
+
     return fig, ax
 
 scatter_fuzzy_discrete(tools.load_output(CART_CSV, aggregate_version="mean"))
@@ -76,8 +76,8 @@ for method in methods:
     for reward in rewards:
         df = pd.read_csv(reward, header=None).T
         version = int(reward.stem.split("_v")[-1].split("_")[0])
-        df.set_index(pd.MultiIndex.from_tuples([(ENV, method, version)], 
-                                               names=["env", "method", "version"]), 
+        df.set_index(pd.MultiIndex.from_tuples([(ENV, method, version)],
+                                               names=["env", "method", "version"]),
                      inplace=True)
         dfs.append(df)
     method_df= pd.concat(dfs, axis=0)
