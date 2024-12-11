@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, TYPE_CHECKING, Any
+from typing import Dict, Any
 
 import torch
 
@@ -11,7 +11,6 @@ from ray.rllib.core.learner.learner import POLICY_LOSS_KEY, VF_LOSS_KEY, ENTROPY
 from ray.rllib.utils.torch_utils import explained_variance
 from ray.rllib.algorithms.ppo.ppo import (
     LEARNER_RESULTS_KL_KEY,
-    LEARNER_RESULTS_CURR_KL_COEFF_KEY,
     LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY,
     LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY,
     PPOConfig,

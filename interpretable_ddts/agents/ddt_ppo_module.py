@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional, TYPE_CHECKING, Union
 
 import numpy as np
 from ray.rllib import SampleBatch
-from ray.rllib.algorithms.ppo.ppo_rl_module import PPORLModule
 from ray.rllib.algorithms.ppo.torch.ppo_torch_rl_module import PPOTorchRLModule
 from ray.rllib.core.models.base import ACTOR, CRITIC, ENCODER_OUT
 from ray.rllib.core.rl_module.rl_module import RLModuleConfig
@@ -184,18 +183,18 @@ class DDTModule(PPOTorchRLModule):
                 "actions": action.unsqueeze(-1),  # actions will be used as-is (no sampling step!)
                 #    "action_dist_inputs": ...  # optional: If provided, will be used to compute action probs and logp.
             }
-        
+
 
 class DDTModuleGymRunner(DDTModule, AgentBase):
-    
+
     @property
-    def action_network(self):
+    def action_network(self):  # pyright: ignore[reportIncompatibleVariableOverride]
         return self.pi
-    
+
     @property
-    def value_network(self):
+    def value_network(self):  # pyright: ignore[reportIncompatibleVariableOverride]
         return self.vf
-    
+
     def save_reward(self, reward):
         self.replay_buffer.insert(
             obs=[self.last_state],
@@ -206,7 +205,7 @@ class DDTModuleGymRunner(DDTModule, AgentBase):
             rewards=reward,
         )
         return True
-    
+
     def setup(self, duplicate=False) -> None:
         super().setup()
         self.rewards_file = None
@@ -216,16 +215,16 @@ class DDTModuleGymRunner(DDTModule, AgentBase):
         self.replay_buffer = SilvaReplayBuffer()
         self.reward_history = []
         self._check_version()
-        
+
         self.ppo = ppo_update.PPO([self.action_network, self.value_network], two_nets=True, use_gpu=False)
         self.num_steps = 0
-        
+
     def _write_hparams(self):
         pass
-    
+
     def save(self, path):
         pass
-    
+
     def duplicate(self):
         return self
 

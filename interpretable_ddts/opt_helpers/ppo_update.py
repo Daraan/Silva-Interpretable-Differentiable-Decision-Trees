@@ -1,16 +1,17 @@
+from typing import TYPE_CHECKING
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions import Categorical
-import numpy as np
-
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from interpretable_ddts.opt_helpers.replay_buffer import (
         ReplayBufferSingleAgent as SilvaReplayBuffer,
     )
+
 
 class PPO:
     def __init__(self, actor_critic_arr, two_nets=True, use_gpu=False):
@@ -57,16 +58,20 @@ class PPO:
             samples = [sample for sample in samples if sample is not False]
             if len(samples) <= 0:
                 continue
-            state = torch.cat([sample['state'][0] for sample in samples], dim=0)
-            action_probs = torch.Tensor([sample['action_prob'] for sample in samples])
-            adv_targ = torch.Tensor([sample['advantage'] for sample in samples])
-            reward = torch.Tensor([sample['reward'] for sample in samples])
-            old_action_probs = torch.cat([sample['full_prob_vector'].unsqueeze(0) for sample in samples], dim=0)
-            if True in np.array(np.isnan(adv_targ).tolist()) or \
-                    True in np.array(np.isnan(reward).tolist()) or \
-                    True in np.array(np.isnan(old_action_probs).tolist()):
+            state = torch.cat([sample["state"][0] for sample in samples], dim=0)
+            action_probs = torch.Tensor([sample["action_prob"] for sample in samples])
+            adv_targ = torch.Tensor([sample["advantage"] for sample in samples])
+            reward = torch.Tensor([sample["reward"] for sample in samples])
+            old_action_probs = torch.cat(
+                [sample["full_prob_vector"].unsqueeze(0) for sample in samples], dim=0
+            )
+            if (
+                True in np.array(np.isnan(adv_targ).tolist())
+                or True in np.array(np.isnan(reward).tolist())
+                or True in np.array(np.isnan(old_action_probs).tolist())
+            ):
                 continue
-            action_taken = torch.Tensor([sample['action_taken'] for sample in samples])
+            action_taken = torch.Tensor([sample["action_taken"] for sample in samples])
             if self.use_gpu:
                 action_taken = action_taken.cuda()
                 state = [st.cuda() for st in state]
@@ -89,7 +94,10 @@ class PPO:
             # ratio = torch.exp(update_log_probs - action_probs)
             ratio = torch.exp(update_log_probs) - action_probs
             surr1 = ratio * adv_targ
-            surr2 = torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
+            surr2 = (
+                torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param)
+                * adv_targ
+            )
             action_loss = -torch.min(surr1, surr2).mean()
             # Policy Gradient:
             # action_loss = (torch.sum(torch.mul(update_log_probs, adv_targ).mul(-1), -1))

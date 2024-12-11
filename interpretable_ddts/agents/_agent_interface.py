@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import wraps
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, SupportsFloat
 from typing_extensions import Self
 
 from interpretable_ddts.opt_helpers import replay_buffer, ppo_update
@@ -97,7 +97,7 @@ class AgentBase:
 
     #
     
-    def save_reward(self, reward: float):
+    def save_reward(self, reward: float | SupportsFloat):
         raise NotImplementedError
 
     def save(self, path: str):

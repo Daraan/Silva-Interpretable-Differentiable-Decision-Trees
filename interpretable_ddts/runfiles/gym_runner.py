@@ -1,11 +1,23 @@
 # Created by Andrew Silva on 8/28/19
 from __future__ import annotations
 
+import argparse
+import copy
+import time
 from pathlib import Path
-from typing import Iterable, Optional, Union, Any, cast
+from typing import Any, Iterable, Optional, Union, cast
+
 import gymnasium as gym
 import numpy as np
+import torch.multiprocessing as mp
+from gymnasium.envs.box2d.lunar_lander import LunarLander
+from gymnasium.envs.classic_control.cartpole import CartPoleEnv
+from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo  # pyright: ignore[reportPrivateImportUsage]
+from joblib import Parallel, delayed
+from packaging.version import Version
+from packaging.version import parse as parse_version
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
+from tqdm import tqdm
 
 from interpretable_ddts.agents._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt import DDTCatalog
@@ -13,20 +25,7 @@ from interpretable_ddts.agents.ddt_agent import DDTAgent
 from interpretable_ddts.agents.ddt_ppo_module import DDTModuleGymRunner
 from interpretable_ddts.agents.mlp_agent import MLPAgent
 from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
-from joblib import Parallel, delayed
-import time
-import torch.multiprocessing as mp
-import argparse
-import copy
-from tqdm import tqdm
-
 from interpretable_ddts.tools import seed_everything
-
-from packaging.version import parse as parse_version, Version
-
-from gymnasium.envs.box2d.lunar_lander import LunarLander
-from gymnasium.envs.classic_control.cartpole import CartPoleEnv
-from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo
 
 GYM_VERSION = parse_version(gym.__version__)
 GYM_V_0_26 = GYM_VERSION >= Version("0.26")
@@ -53,7 +52,7 @@ def run_episode(q, env: gym.Env, agent_in: AgentBase, seed: Optional[int]=0, ren
             state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
         else:
-            state, reward, done, _ = env.step(action)
+            state, reward, done, _ = env.step(action)  # pyright: ignore[reportAssignmentType]
         # env.render()
         # Save reward
         agent.save_reward(reward)
@@ -151,11 +150,14 @@ def main(
         if agent.save_output and episode % 500 == 0:
             agent.save(models_path / f"{episode}th")
     # Save final episode
-    if use_pbar and episode % 50 != 0:
+    if use_pbar and episode % 50 != 0:  # pyright: ignore[reportPossiblyUnboundVariable]
         pbar.set_description(
-            f"{agent.bot_name}_v{agent.version} |Ep. {episode:<4} |Rwrd: {reward:>4.0f} |Avg. Rwrd: {running_reward:>4.0f} |Len {returned_object[1]['steps']:>3}"
+            f"{agent.bot_name}_v{agent.version} |Ep. {episode:<4} |Rwrd: {reward:>4.0f} |Avg. Rwrd: {running_reward:>4.0f} |Len {returned_object[1]['steps']:>3}"  # pyright: ignore[reportPossiblyUnboundVariable]
         )
-    if agent.save_output and episode % 500 != 0:
+    if (
+        agent.save_output
+        and episode % 500 != 0  # pyright: ignore[reportPossiblyUnboundVariable]
+    ):
         agent.save(models_path / f"{episode}th")
 
     return running_reward_array
@@ -178,7 +180,7 @@ def create_rlib_agent(args, init_env):
         },
         catalog_class=DDTCatalog,
     )
-    policy_agent = module_spec.build()
+    policy_agent: DDTModuleGymRunner = cast(DDTModuleGymRunner, module_spec.build())
     policy_agent.setup()
     return policy_agent
 
@@ -292,13 +294,13 @@ if __name__ == "__main__":
     init_env: gym.Env
     if ENV_TYPE == 'lunar':
         init_env = cast(LunarLander, gym.make('LunarLander-v2', render_mode=args.render_mode))
-        dim_in = init_env.observation_space.shape[0]
-        dim_out = init_env.action_space.n
+        dim_in = init_env.observation_space.shape[0]  # type: ignore
+        dim_out = init_env.action_space.n  # type: ignore[attr-defined]
         env = "LunarLander-v2"
     elif ENV_TYPE == 'cart':
         init_env = cast(CartPoleEnv, gym.make("CartPole-v1", render_mode=args.render_mode))
-        dim_in = init_env.observation_space.shape[0]
-        dim_out = init_env.action_space.n
+        dim_in = init_env.observation_space.shape[0]  # type: ignore
+        dim_out = init_env.action_space.n  # type: ignore[attr-defined]
         env = "CartPole-v1"
     else:
         raise Exception('No valid environment selected')
@@ -309,7 +311,7 @@ if __name__ == "__main__":
         print(f"Agent {AGENT_TYPE} on {ENV_TYPE} seed {SEED}")
     # mp.set_start_method('spawn')
     # mp.set_sharing_strategy('file_system')
-    #torch.backends.cudnn.deterministic = True
+    # torch.backends.cudnn.deterministic = True
 
     if not args.not_parallel:
         data = Parallel(n_jobs=5, pre_dispatch="all")(

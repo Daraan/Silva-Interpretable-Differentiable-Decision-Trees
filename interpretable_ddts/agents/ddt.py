@@ -141,7 +141,7 @@ class DDT(nn.Module):
             going_left = True
             leaf_index = 0
             self.leaf_init_information = []
-            for level in range(2**depth):
+            for _level in range(2**depth):
                 curr_node = last_level[leaf_index]
                 turn_left = going_left
                 left_path = []

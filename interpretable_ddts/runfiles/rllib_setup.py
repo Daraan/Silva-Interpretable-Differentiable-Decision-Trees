@@ -1,36 +1,45 @@
 import argparse
-from functools import partial
 import math
 import os
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
+
 import gymnasium as gym
 import ray
-from ray.rllib.core.rl_module.rl_module import RLModuleSpec
-from ray.rllib.algorithms.ppo import PPOConfig
-from ray import tune, train
-from ray.tune import CLIReporter
-# NOTE: JSON, CSV, and Tensorboard loggers are created automatically by Tune
-from ray.tune.logger import JsonLoggerCallback, TBXLoggerCallback, CSVLoggerCallback  # noqa: F401
+from packaging.version import parse as parse_version
+from ray import train, tune
 from ray.air.integrations.wandb import WandbLoggerCallback, setup_wandb
+from ray.experimental import tqdm_ray
+from ray.rllib.algorithms.ppo import PPOConfig
+from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 from ray.rllib.utils.metrics import (
     ENV_RUNNER_RESULTS,
     EPISODE_RETURN_MEAN,
     EVALUATION_RESULTS,
 )
-from ray.experimental import tqdm_ray
+from ray.tune import CLIReporter
+
+# NOTE: JSON, CSV, and Tensorboard loggers are created automatically by Tune
+from ray.tune.logger import (  # noqa: F401
+    CSVLoggerCallback,
+    JsonLoggerCallback,
+    TBXLoggerCallback,
+)
 from tqdm import tqdm
 
 from interpretable_ddts.agents.ddt import DDTCatalog
 from interpretable_ddts.agents.ddt_ppo_module import DDTModule, DDTModuleGymRunner
-from packaging.version import parse as parse_version
-
 from interpretable_ddts.agents.ppo_learner import SilvaLearner
 from interpretable_ddts.runfiles import gym_runner
 
 os.environ["RAY_COLOR_PREFIX"]="1"
 
 RAY_VERSION = parse_version(ray.__version__)
+
+# Keys
+TRAIN_METRIC_RETURN_MEAN = ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
+EVAL_METRIC_RETURN_MEAN = EVALUATION_RESULTS + "/" + ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
 
 if __name__ == "__main__":
     # full parser see: https://github.com/ray-project/ray/blob/master/rllib/utils/test_utils.py#L61
@@ -59,7 +68,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.seed == -1:
         args.seed = None
-
 
     if args.env_type == 'lunar':
         init_env = gym.make('LunarLander-v2')
@@ -151,7 +159,7 @@ if __name__ == "__main__":
         use_kl_loss=False,
         use_gae=True,  # Must be true to use "truncate_episodes"
     )
-        # Create a single agent RL module spec.
+    # Create a single agent RL module spec.
     module_spec = RLModuleSpec(
         module_class=DDTModule,
         observation_space=init_env.observation_space,
@@ -170,7 +178,7 @@ if __name__ == "__main__":
         },
         catalog_class=DDTCatalog,
     )
-    #module = module_spec.build()
+    # module = module_spec.build()
 
     config.rl_module(
         rl_module_spec=module_spec,
@@ -219,24 +227,32 @@ if __name__ == "__main__":
         running_eval_rewards = []
         for _episode in pbar:
             result = algo.train()
+            # Results
             eval_results = result.get(EVALUATION_RESULTS, {})
             eval_env_runner_results = eval_results.get(ENV_RUNNER_RESULTS, {})
             eval_mean = eval_env_runner_results.get(EPISODE_RETURN_MEAN, float("nan"))
             if not math.isnan(eval_mean):
                 running_eval_rewards.append(eval_mean)
-            running_eval_reward = (sum(running_eval_rewards[-100:]) / min(100, len(running_eval_rewards))) if len(running_eval_rewards) else float("nan")
-            metrics={
-                ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN: result[ENV_RUNNER_RESULTS].get(EPISODE_RETURN_MEAN, None),
-                EVALUATION_RESULTS + "/" + ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN : eval_mean
+            running_eval_reward = sum(running_eval_rewards[-100:]) / (
+                min(100, len(running_eval_rewards)) or float("nan")  # nan for 0
+            )
+            metrics = {
+                TRAIN_METRIC_RETURN_MEAN: result[ENV_RUNNER_RESULTS].get(
+                    EPISODE_RETURN_MEAN, None
+                ),
+                EVAL_METRIC_RETURN_MEAN: eval_mean,
             }
+            # Report metrics
             train.report(metrics)
+
+            # Update progress bar
             if not use_pbar:
                 continue
             if TYPE_CHECKING:
                 assert isinstance(pbar, (tqdm_ray.tqdm, tqdm))
             try:
                 pbar.set_description(
-                    f"Mean Rew: {result['env_runners']['episode_return_mean']:>6.1f} |"
+                    f"Mean Rew: {metrics[TRAIN_METRIC_RETURN_MEAN]:>6.1f} |"
                     f"Max Rew: {result['env_runners']['episode_return_max']:>4.0f} |"
                     f"Eval Rew: {eval_mean:>6.1f} |"
                     f"Rolling Eval Rew: {running_eval_reward:>6.1f} |"
@@ -286,10 +302,10 @@ if __name__ == "__main__":
     else:
         trainable = partial(build_and_train, use_pbar=True)
     param_space = {
-        "algo" : config.algo_class.__name__,
         "env" : str(config.env),
-        "model_config" : config.rl_module_spec.model_config,
+        "algo" : config.algo_class.__name__,
         "module": config.rl_module_spec.module_class.__name__,
+        "model_config" : config.rl_module_spec.model_config,
     }
     param_space = {k: tune.choice([v]) for k, v in param_space.items()}
 
