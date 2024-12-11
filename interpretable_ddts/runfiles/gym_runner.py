@@ -16,19 +16,18 @@ from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo  # pyright: 
 from joblib import Parallel, delayed
 from packaging.version import Version
 from packaging.version import parse as parse_version
-from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 from tqdm import tqdm
 
 from interpretable_ddts.agents._agent_interface import AgentBase
-from interpretable_ddts.agents.ddt import DDTCatalog
 from interpretable_ddts.agents.ddt_agent import DDTAgent
-from interpretable_ddts.agents.ddt_ppo_module import DDTModuleGymRunner
 from interpretable_ddts.agents.mlp_agent import MLPAgent
 from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
 from interpretable_ddts.tools import seed_everything
 
 if TYPE_CHECKING:
     from multiprocessing.synchronize import Lock
+    from ray.rllib.core.rl_module.rl_module import RLModuleSpec  # for performance import only if used
+
 
 GYM_VERSION = parse_version(gym.__version__)
 GYM_V_0_26 = GYM_VERSION >= Version("0.26")
@@ -166,6 +165,10 @@ def main(
     return running_reward_array
 
 def create_rlib_agent(args, init_env: gym.Env):
+    from ray.rllib.core.rl_module.rl_module import RLModuleSpec  # noqa: F811
+    from interpretable_ddts.agents.ddt_catalog import DDTCatalog  # noqa: F811
+    from interpretable_ddts.agents.ddt_ppo_module import DDTModuleGymRunner  # noqa: F811
+
     module_spec = RLModuleSpec(
         module_class=DDTModuleGymRunner,
         observation_space=init_env.observation_space,
@@ -202,9 +205,11 @@ def start_process(
         sub_seed = seed + i if seed is not None else None
         seed_everything(None, sub_seed, torch_manual=False)
     seed2 = np.random.randint(0, 1000000)
-    if isinstance(agent_type, RLModuleSpec):
+    if agent_type.__class__.__name__ == "RLModuleSpec":  # avoid expensive import
         bot_name = "rllib" + env_type
     else:
+        if TYPE_CHECKING:
+            assert isinstance(agent_type, str)
         bot_name = agent_type + env_type
     if args.gpu:
         bot_name += "GPU"
@@ -230,7 +235,8 @@ def start_process(
         elif agent_type == "rllib":
             assert init_env
             policy_agent = create_rlib_agent(args, init_env)
-        elif isinstance(agent_type, RLModuleSpec):
+        elif agent_type.__class__.__name__ == "RLModuleSpec":
+            assert not TYPE_CHECKING or isinstance(agent_type, RLModuleSpec)
             policy_agent = agent_type.build()
             policy_agent.setup()
         else:

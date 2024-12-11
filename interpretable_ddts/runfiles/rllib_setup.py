@@ -30,7 +30,7 @@ from ray.tune.logger import (  # noqa: F401
 )
 from tqdm import tqdm
 
-from interpretable_ddts.agents.ddt import DDTCatalog
+from interpretable_ddts.agents.ddt_catalog import DDTCatalog
 from interpretable_ddts.agents.ddt_ppo_module import DDTModule, DDTModuleGymRunner
 from interpretable_ddts.agents.ppo_learner import SilvaLearner
 from interpretable_ddts.runfiles import gym_runner

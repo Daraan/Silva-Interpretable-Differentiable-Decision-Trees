@@ -1,13 +1,9 @@
 # Created by Andrew Silva on 2/21/19
 from __future__ import annotations
 
-import functools
-
-from ray.rllib.core.models.catalog import Catalog
-
-import torch.nn as nn
-import torch
 import numpy as np
+import torch
+import torch.nn as nn
 
 class DDT(nn.Module):
     def __init__(self,
@@ -227,17 +223,3 @@ class DDT(nn.Module):
             return self.softmax(actions)
         else:
             return actions
-
-class DDTCatalog(Catalog):
-
-    def _determine_components_hook(self) -> None:
-        """Hook to determine the components of the model."""
-        # We do not need an encoder; no not set _encoder_config
-
-        assert not hasattr(self, "_encoder_config")
-
-        # Create a function that can be called when framework is known to retrieve the
-        # class type for action distributions
-        self._action_dist_class_fn = functools.partial(
-            self._get_dist_cls_from_action_space, action_space=self.action_space
-        )
