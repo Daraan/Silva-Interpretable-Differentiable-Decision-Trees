@@ -22,7 +22,7 @@ class DDT(nn.Module):
         super(DDT, self).__init__()
         """
         Initialize the DDT, taking in premade weights for inputs to comparators and sigmoids
-        initialized tree. 
+        initialized tree.
         :param weights: input weights (for intelligent init or for loading)
         :param comparators: input comparators (for intelligent init or for loading)
         :param input_dim: int. always required for input dimensionality
@@ -182,7 +182,7 @@ class DDT(nn.Module):
     def forward(self, input_data, embedding_list=None):
         if isinstance(input_data, dict):
             input_data = input_data['obs']
-        
+
         input_data = input_data.t().expand(self.layers.size(0), *input_data.t().size())
 
         input_data = input_data.permute(2, 0, 1)
@@ -229,13 +229,13 @@ class DDT(nn.Module):
             return actions
 
 class DDTCatalog(Catalog):
-            
+
     def _determine_components_hook(self) -> None:
         """Hook to determine the components of the model."""
         # We do not need an encoder; no not set _encoder_config
 
         assert not hasattr(self, "_encoder_config")
-        
+
         # Create a function that can be called when framework is known to retrieve the
         # class type for action distributions
         self._action_dist_class_fn = functools.partial(

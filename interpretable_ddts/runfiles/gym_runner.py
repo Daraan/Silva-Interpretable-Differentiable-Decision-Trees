@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 import copy
-import time
 from pathlib import Path
-from typing import Any, Iterable, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Iterable, Optional, Union, cast
 
 import gymnasium as gym
 import numpy as np
@@ -26,6 +26,9 @@ from interpretable_ddts.agents.ddt_ppo_module import DDTModuleGymRunner
 from interpretable_ddts.agents.mlp_agent import MLPAgent
 from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
 from interpretable_ddts.tools import seed_everything
+
+if TYPE_CHECKING:
+    from multiprocessing.synchronize import Lock
 
 GYM_VERSION = parse_version(gym.__version__)
 GYM_V_0_26 = GYM_VERSION >= Version("0.26")
@@ -162,7 +165,7 @@ def main(
 
     return running_reward_array
 
-def create_rlib_agent(args, init_env):
+def create_rlib_agent(args, init_env: gym.Env):
     module_spec = RLModuleSpec(
         module_class=DDTModuleGymRunner,
         observation_space=init_env.observation_space,
@@ -184,19 +187,14 @@ def create_rlib_agent(args, init_env):
     policy_agent.setup()
     return policy_agent
 
-def start_process(i, args: argparse.Namespace, init_env=None):
+
+def start_process(
+    i, args: argparse.Namespace, init_env: Optional[gym.Env] = None, lock: Optional[Lock]=None
+):
     """
     Wrapper of main that can be used in parallel.
     """
-    if isinstance(i, dict):
-        # rllib config pass
-        pass
-    elif i > 0:  # delay the start for file existence checks
-        time.sleep(i / 2)
     agent_type: str | RLModuleSpec = args.agent_type
-    if agent_type == "rllib":
-        print(init_env)
-        assert init_env
     env_type: str = args.env_type
     seed: Optional[int] = args.seed
     # Initialize with different seed
@@ -210,31 +208,34 @@ def start_process(i, args: argparse.Namespace, init_env=None):
         bot_name = agent_type + env_type
     if args.gpu:
         bot_name += "GPU"
-    if agent_type == "ddt":
-        policy_agent = DDTAgent(
-            bot_name=bot_name,
-            input_dim=args.dim_in,
-            output_dim=args.dim_out,
-            rule_list=args.rule_list,
-            num_rules=args.num_leaves,
-            save_output=not args.test,
-        )
-    elif agent_type == "mlp":
-        policy_agent = MLPAgent(
-            bot_name=bot_name,
-            input_dim=args.dim_in,
-            output_dim=args.dim_out,
-            num_hidden=args.num_hidden,
-            save_output=not args.test,
-        )
-    elif agent_type == "rllib":
-        policy_agent = create_rlib_agent(args, init_env)
-    elif isinstance(agent_type, RLModuleSpec):
-        policy_agent = agent_type.build()
-        policy_agent.setup()
-    else:
-        raise Exception("No valid network selected")
-    use_pbar = getattr(args, "use_pbar", True)
+    # Use a lock for file creation
+    with (lock or nullcontext()):
+        if agent_type == "ddt":
+            policy_agent = DDTAgent(
+                bot_name=bot_name,
+                input_dim=args.dim_in,
+                output_dim=args.dim_out,
+                rule_list=args.rule_list,
+                num_rules=args.num_leaves,
+                save_output=not args.test,
+            )
+        elif agent_type == "mlp":
+            policy_agent = MLPAgent(
+                bot_name=bot_name,
+                input_dim=args.dim_in,
+                output_dim=args.dim_out,
+                num_hidden=args.num_hidden,
+                save_output=not args.test,
+            )
+        elif agent_type == "rllib":
+            assert init_env
+            policy_agent = create_rlib_agent(args, init_env)
+        elif isinstance(agent_type, RLModuleSpec):
+            policy_agent = agent_type.build()
+            policy_agent.setup()
+        else:
+            raise Exception("No valid network selected")
+    use_pbar: bool | type[tqdm] = getattr(args, "use_pbar", True)
     if use_pbar:
         if isinstance(use_pbar, type):
             pbar = use_pbar(range(1, args.episodes + 1))
@@ -314,8 +315,9 @@ if __name__ == "__main__":
     # torch.backends.cudnn.deterministic = True
 
     if not args.not_parallel:
+        lock = mp.Manager().Lock()
         data = Parallel(n_jobs=5, pre_dispatch="all")(
-            delayed(start_process)(i, args, init_env) for i in range(5)
+            delayed(start_process)(i, args, init_env, lock) for i in range(5)
         )
     else:
         data = [start_process(0, args, init_env) for _ in range(5)]

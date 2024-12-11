@@ -3,7 +3,7 @@ import math
 import os
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, TypeVar
 
 import gymnasium as gym
 import ray
@@ -41,72 +41,35 @@ RAY_VERSION = parse_version(ray.__version__)
 TRAIN_METRIC_RETURN_MEAN = ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
 EVAL_METRIC_RETURN_MEAN = EVALUATION_RESULTS + "/" + ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
 
-if __name__ == "__main__":
-    # full parser see: https://github.com/ray-project/ray/blob/master/rllib/utils/test_utils.py#L61
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-a", "--agent_type", help="architecture of agent to run", type=str, default='ddt')
-    parser.add_argument("-e", "--episodes", help="how many episodes", type=int, default=1000)
-    parser.add_argument("-l", "--num_leaves", help="number of leaves for DDT/DRL ", type=int, default=8)
-    parser.add_argument("-n", "--num_hidden", help="number of hidden layers for MLP ", type=int, default=0)
-    parser.add_argument("-env", "--env_type", help="environment to run on", type=str, default='cart')
-    parser.add_argument("-gpu", "--gpu", help="run on GPU?", action='store_true')
-    parser.add_argument("-r", "--rule_list", help="Use rule list setup", action='store_true', default=False)
-    parser.add_argument("-s", "--seed", help="Seed", default=-1, type=int)
-    parser.add_argument("-np", "--not_parallel", help="Do not run in parallel", action='store_true', default=False)
-    parser.add_argument("-p", "--process_number", help="Process number", type=int, default=0)
-    parser.add_argument("--silent", help="supress prints", action="store_true", default=False,)
-    parser.add_argument("--test", "--dry-run", help="Do not save any models", action="store_true", default=False)
-    parser.add_argument("--wandb", "-wb", help="Log to WandB", action="store_true", default=False)
-    parser.add_argument(
-        "-rl",
-        "--rllib",
-        help="Use rllib",
-        action="store_true",
-        default=False,
-    )
+_ConfigType = TypeVar("_ConfigType", bound=PPOConfig)
 
-    args = parser.parse_args()
-    if args.seed == -1:
-        args.seed = None
 
-    if args.env_type == 'lunar':
-        init_env = gym.make('LunarLander-v2')
-        dim_in = init_env.observation_space.shape[0]  # pyright: ignore[reportOptionalSubscript]
-        dim_out = init_env.action_space.n  # type: ignore[attr-defined]
-        env = "LunarLander-v2"
-    elif args.env_type == 'cart':
-        init_env = gym.make('CartPole-v1')
-        dim_in = init_env.observation_space.shape[0]  # pyright: ignore[reportOptionalSubscript]
-        dim_out = init_env.action_space.n  # type: ignore[attr-defined]
-        env = "CartPole-v1"
-    else:
-        raise Exception('No valid environment selected')
-    dim_int, dim_out = int(dim_in), int(dim_out)  # might be np
-
-    config = PPOConfig()
+def create_ddt_config(
+    args: argparse.Namespace, env: str | gym.Env, config_class: type[_ConfigType] = PPOConfig
+) -> tuple[_ConfigType, RLModuleSpec]:
+    config = config_class()
     config.environment(env)
     config.api_stack(
         enable_rl_module_and_learner=True,
         enable_env_runner_and_connector_v2=True,
     )
     config.resources(
-        #num_gpus=1 if args.gpu else 0,4
+        # num_gpus=1 if args.gpu else 0,4
         # process that runs Algorithm.training_step() during Tune
         num_cpus_for_main_process=1,
-        #num_learner_workers=0 if args.not_parallel else 4,
-        #num_cpus_per_learner_worker=1,
-        #num_cpus_per_worker=1,
+        # num_learner_workers=0 if args.not_parallel else 4,
+        # num_cpus_per_learner_worker=1,
+        # num_cpus_per_worker=1,
     )
     config.env_runners(
         num_env_runners=0 if args.not_parallel else 2,
         num_cpus_per_env_runner=1,  # num_cpus_per_worker
-        #explore=False,
+        # explore=False,
         # How long an rollout episode lasts, for "auto" calculated from batch_size
         # total_train_batch_size / (num_envs_per_env_runner * num_env_runners)
-        #rollout_fragment_length=1,  # Default: "auto"
+        # rollout_fragment_length=1,  # Default: "auto"
         num_envs_per_env_runner=1,
         validate_env_runners_after_construction=args.test,
-
         # 1) "truncate_episodes": Each call to `EnvRunner.sample()` returns a
         #    batch of at most `rollout_fragment_length * num_envs_per_env_runner` in
         #    size. The batch is exactly `rollout_fragment_length * num_envs`
@@ -129,27 +92,28 @@ if __name__ == "__main__":
     config.framework("torch")
     config.training(
         learner_class=SilvaLearner,  #
-        learner_config_dict={
-            "use_silva_loss" : USE_SILVA_LOSS
-        },
+        learner_config_dict={"use_silva_loss": USE_SILVA_LOSS},
         gamma=0.99,
         use_critic=True,
         # with a growing number of Learners and to increase the learning rate as follows:
         # lr = [original_lr] * ([num_learners] ** 0.5)
-        lr=1e-3
-            if True else
+        lr=(
+            1e-3
+            if True
+            else
             # Shedule LR
             [
                 [0, 8e-3],  # <- initial value at timestep 0
                 [100, 4e-3],
                 [400, 1e-3],
                 [800, 1e-4],
-            ],
+            ]
+        ),
         clip_param=0.2,
         grad_clip=0.5,
         # grad_clip_by="norm",
         entropy_coeff=0.01,
-        #vf_clip_param=10,
+        # vf_clip_param=10,
         train_batch_size_per_learner=36,
         # The total effective batch size is then
         # `num_learners` x `train_batch_size_per_learner` and you can
@@ -194,7 +158,7 @@ if __name__ == "__main__":
             # policy, even if this is a stochastic one. Setting "explore=False" here
             # results in the evaluation workers not using this optimal policy!
             "explore": False,
-        }
+        },
     )
 
     config.reporting(
@@ -205,19 +169,72 @@ if __name__ == "__main__":
     )
     config.debugging(
         # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.debugging.html#ray-rllib-algorithms-algorithm-config-algorithmconfig-debugging
-        #seed=args.seed,
+        # seed=args.seed,
     )
+    # Checks
+    config.validate_train_batch_size_vs_rollout_fragment_length()
     assert (
         config.rl_module_spec.model_config["vf_double_output"]  # type: ignore
         == config.learner_config_dict["use_silva_loss"]
     )
+    return config, module_spec
 
-    config.validate_train_batch_size_vs_rollout_fragment_length()
+
+if __name__ == "__main__":
+    # full parser see: https://github.com/ray-project/ray/blob/master/rllib/utils/test_utils.py#L61
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-a", "--agent_type", help="architecture of agent to run", type=str, default="ddt")
+    parser.add_argument("-e", "--episodes", help="how many episodes", type=int, default=1000)
+    parser.add_argument("-l", "--num_leaves", help="number of leaves for DDT/DRL ", type=int, default=8)
+    parser.add_argument("-n", "--num_hidden", help="number of hidden layers for MLP ", type=int, default=0)
+    parser.add_argument("-env", "--env_type", help="environment to run on", type=str, default="cart")
+    parser.add_argument("-gpu", "--gpu", help="run on GPU?", action="store_true")
+    parser.add_argument("-r", "--rule_list", help="Use rule list setup", action="store_true", default=False)
+    parser.add_argument("-s", "--seed", help="Seed", default=-1, type=int)
+    parser.add_argument("-np", "--not_parallel", help="Do not run in parallel", action="store_true", default=False)
+    parser.add_argument("-p", "--process_number", help="Process number", type=int, default=0)
+    parser.add_argument(
+        "--silent",
+        help="supress prints",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument("--test", "--dry-run", help="Do not save any models", action="store_true", default=False)
+    parser.add_argument("--wandb", "-wb", help="Log to WandB", action="store_true", default=False)
+    parser.add_argument(
+        "-rl",
+        "--rllib",
+        help="Use rllib",
+        action="store_true",
+        default=False,
+    )
+
+    args = parser.parse_args()
+    if args.seed == -1:
+        args.seed = None
+
+    if args.env_type == 'lunar':
+        init_env = gym.make('LunarLander-v2')
+        dim_in = init_env.observation_space.shape[0]  # pyright: ignore[reportOptionalSubscript]
+        dim_out = init_env.action_space.n  # type: ignore[attr-defined]
+        env = "LunarLander-v2"
+    elif args.env_type == 'cart':
+        init_env = gym.make('CartPole-v1')
+        dim_in = init_env.observation_space.shape[0]  # pyright: ignore[reportOptionalSubscript]
+        dim_out = init_env.action_space.n  # type: ignore[attr-defined]
+        env = "CartPole-v1"
+    else:
+        raise Exception('No valid environment selected')
+    dim_int, dim_out = int(dim_in), int(dim_out)  # might be np
+
+    config, module_spec = create_ddt_config(args, env)
+
     def build_and_train(index: Optional[int | dict[str, Any]]=None, use_pbar=True):
         """
         Args:
             index: Is a `dict` / `param_spec` if this is used by Tune.
         """
+        config, _ = create_ddt_config(args, env)
         algo = config.build()
 
         if use_pbar:
@@ -256,8 +273,6 @@ if __name__ == "__main__":
                     f"Max Rew: {result['env_runners']['episode_return_max']:>4.0f} |"
                     f"Eval Rew: {eval_mean:>6.1f} |"
                     f"Rolling Eval Rew: {running_eval_reward:>6.1f} |"
-                    #f"Length Avg: {result['env_runners']['episode_len_mean']:.1f} |"
-                    # f"Loss: {result['learners']['default_policy']['total_loss']:.2f}"
                 )
             except KeyError as e:
                 print("Error with Key", e)

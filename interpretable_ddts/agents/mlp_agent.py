@@ -161,7 +161,7 @@ class MLPAgent(AgentBase):
         self.actor_opt = copy.deepcopy(state['actor_opt'])
         self.value_opt = copy.deepcopy(state['value_opt'])
         self.num_hidden = copy.deepcopy(state['num_hidden'])
-    
+
     @AgentBase.skip_if_no_output
     def _write_hparams(self):
         if self.save_output:

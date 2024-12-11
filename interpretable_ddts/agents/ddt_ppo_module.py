@@ -82,7 +82,7 @@ class DDTModule(PPOTorchRLModule):
     def setup(self) -> None:
         #super().setup() # Might create more modules, e.g. encoder
         assert isinstance(self.model_config, dict)
-        
+
         self.bot_name = self.model_config["bot_name"] + '_'
         num_rules = self.model_config["num_rules"]
         rule_list = self.model_config["rule_list"]
@@ -100,7 +100,7 @@ class DDTModule(PPOTorchRLModule):
             init_leaves = num_rules
             if str(num_rules) + '_leaves' not in self.bot_name:
                 self.bot_name += str(num_rules) + '_leaves'
-        
+
         # Use is_value=True to NOT apply the softmax and return logits
         self.action_network = DDT(
             input_dim=input_dim,
@@ -128,7 +128,7 @@ class DDTModule(PPOTorchRLModule):
         self.pi = self.action_network
 
         self._max_inputs = 10
-        
+
     def encoder(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """No encoder is used return inputs in an ActorCriticEncoder output form"""
         return {
@@ -140,7 +140,7 @@ class DDTModule(PPOTorchRLModule):
 
     def _forward_train(self, batch: Dict[str, Any] | SampleBatch, **kwargs) -> Dict[str, Any]:
         return super()._forward_train(batch, **kwargs)
-        
+
     def _forward_explorationX(self, batch, **kwargs):
         with torch.no_grad():
             obs = torch.Tensor(batch["obs"])

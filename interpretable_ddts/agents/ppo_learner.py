@@ -33,7 +33,7 @@ class SilvaLearner(PPOTorchLearner):
         # Note fwd_out["embeddings"] likely == batch
         module = self.module[module_id].unwrapped()
         use_silva_loss = self.config.learner_config_dict["use_silva_loss"]
-        
+
         if Columns.LOSS_MASK in batch:
             mask = batch[Columns.LOSS_MASK]
             num_valid = torch.sum(mask)
@@ -43,10 +43,10 @@ class SilvaLearner(PPOTorchLearner):
 
         else:
             possibly_masked_mean = torch.mean
-            
+
         action_dist_class_train = module.get_train_action_dist_cls()
-        action_dist_class_exploration = module.get_exploration_action_dist_cls()    
-            
+        action_dist_class_exploration = module.get_exploration_action_dist_cls()
+
         # Silva originally used probs
         # From logits
         curr_action_dist = action_dist_class_train.from_logits(
@@ -60,14 +60,14 @@ class SilvaLearner(PPOTorchLearner):
         logp_ratio = torch.exp(
             curr_action_dist.logp(batch[Columns.ACTIONS]) - batch[Columns.ACTION_LOGP]
         )
-        
+
         action_taken = batch[Columns.ACTIONS]
         #state = batch[Columns.OBS] # ?
-        
+
         entropy_coef = self.entropy_coeff_schedulers_per_module[
             module_id
         ].get_current_value()
-        
+
         # Silva
         # Forward pass
         #new_action_probs = curr_action_dist._dist.probs
@@ -75,7 +75,7 @@ class SilvaLearner(PPOTorchLearner):
         entropy = (
             curr_action_dist.entropy().mean().mul(entropy_coef)
         )  # X: Here mean is taken
-        
+
         #action_probs = torch.Tensor([sample['action_prob'] for sample in samples])
         action_probs = torch.exp(prev_action_dist.logp(action_taken))
         # Possible mistake, logit - prob
@@ -90,7 +90,7 @@ class SilvaLearner(PPOTorchLearner):
             mean_kl_loss = possibly_masked_mean(action_kl)
         else:
             mean_kl_loss = torch.tensor(0.0, device=logp_ratio.device)
-            
+
         # entropy
         curr_entropy = curr_action_dist.entropy()
         mean_entropy = possibly_masked_mean(curr_entropy)
@@ -98,7 +98,7 @@ class SilvaLearner(PPOTorchLearner):
             entropy_coef
             * mean_entropy  # X: Silva used mean_entropy instead of current_entropy (PPO)
         )
-        
+
         # Use negative later
         surrogate_loss = torch.min(
             # Surr1
@@ -108,7 +108,7 @@ class SilvaLearner(PPOTorchLearner):
             * torch.clamp(logp_ratio, 1 - config.clip_param, 1 + config.clip_param),
         )
         # X Silva uses mean here
-        
+
         # ----
 
         # Compute a value function loss.
@@ -133,7 +133,7 @@ class SilvaLearner(PPOTorchLearner):
                 mean_vf_loss = possibly_masked_mean(vf_loss_clipped)
                 mean_vf_unclipped_loss = mean_vf_loss
             # Silva does not clip loss
-            # X: Silva uses reward and not targets 
+            # X: Silva uses reward and not targets
             # value_targets are discounted_returns when using critic
             # When using GAE they are calculated during postprocessing from advantages
             else:
@@ -153,7 +153,7 @@ class SilvaLearner(PPOTorchLearner):
             total_loss = possibly_masked_mean(
                 -surrogate_loss + config.vf_loss_coeff * vf_loss_clipped - scaled_entropy
             )
-        
+
         if config.use_kl_loss:
             total_loss += self.curr_kl_coeffs_per_module[module_id] * mean_kl_loss
 
