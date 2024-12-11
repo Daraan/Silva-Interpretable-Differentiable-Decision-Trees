@@ -226,7 +226,7 @@ class PPOConfigDDT(PPOConfig):
     def __post_init__(self):
         super().__post_init__()
         self["model"] = {"custom_model": self.custom_model}
-    
+
 
 class RLlibDDT(DDTAgent, TorchModelV2, nn.Module):
     # Note that this class by itself is not a valid model unless you inherit from nn.Module and implement forward() in a subclass.
@@ -272,7 +272,7 @@ class RLlibDDT(DDTAgent, TorchModelV2, nn.Module):
             return top_probs, []
         return probs, []
         #return super().forward(input_dict, state, seq_lens)
-    
+
     def value_function(self):
         """ "
         Returns the value function output for the most recent forward pass.
@@ -284,12 +284,12 @@ class RLlibDDT(DDTAgent, TorchModelV2, nn.Module):
         #self.model.value_function()[0].item()
         #print(self.last_value_pred)
         return self.last_value_pred
-    
+
 class SilvaPPO(PPO):
     def get_default_policy_class(self, config):
         return SilvaPPOPolicy
-    
-class SilvaPPOPolicy(PPOTorchPolicy):    
+
+class SilvaPPOPolicy(PPOTorchPolicy):
     @staticmethod
     def policy_compute_actions(policy,
                         obs_batch,

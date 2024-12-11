@@ -10,20 +10,18 @@ from pathlib import Path
 import torch
 from torch.distributions import Categorical
 
-
-
 if TYPE_CHECKING:
     from interpretable_ddts.agents.mlp_agent import BaselineFCNet
     from interpretable_ddts.agents.ddt import DDT
 
 class AgentBase:
-    
+
     bot_name : str
     _duplicate : bool
-    
+
     action_network: BaselineFCNet | DDT
     value_network: BaselineFCNet | DDT
-    
+
     @staticmethod
     def skip_if_no_output(func):
         @wraps(func)
@@ -32,7 +30,7 @@ class AgentBase:
                 return
             return func(self, *args, **kwargs)
         return wrapper
-    
+
     def __init__(self, input_dim=4, output_dim=2, *, version: int | None, save_output: bool, _duplicate: bool):
         assert self.bot_name, "self.bot_name should be set before calling super()"
         self.output_dim = output_dim
@@ -90,13 +88,16 @@ class AgentBase:
             self.bot_name + f"_v{self.version}" + "_rewards.txt"
         )
         self.rewards_file = rewards_file
-        if self.save_output:
-            txts_path.mkdir(parents=True, exist_ok=True)
+        txts_path.mkdir(parents=True, exist_ok=True)
+        # File might was created in parallel
+        if rewards_file.exists():
+            self._check_version()  # will set version recursively
+        elif self.save_output:
             self._write_hparams()
             self.rewards_file.open("a")
 
     #
-    
+
     def save_reward(self, reward: float | SupportsFloat):
         raise NotImplementedError
 
