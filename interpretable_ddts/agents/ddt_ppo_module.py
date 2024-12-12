@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, TYPE_CHECKING, Union
+import logging
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 import numpy as np
-from ray.rllib import SampleBatch
+import ray.train
+
+# from ray.rllib import SampleBatch  # input for model
 from ray.rllib.algorithms.ppo.torch.ppo_torch_rl_module import PPOTorchRLModule
 from ray.rllib.core.models.base import ACTOR, CRITIC, ENCODER_OUT
 from ray.rllib.core.rl_module.rl_module import RLModuleConfig
-from ray.rllib.utils.deprecation import DEPRECATED_VALUE, logger as _deprecation_logger
+from ray.rllib.utils.deprecation import DEPRECATED_VALUE
+from ray.rllib.utils.deprecation import logger as _deprecation_logger
 from ray.rllib.utils.metrics import EPISODE_RETURN_MEAN
 
-import ray.train
-
-import torch
-from torch.distributions import Categorical
 from interpretable_ddts.agents._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt import DDT
 from interpretable_ddts.opt_helpers import ppo_update
@@ -22,7 +22,6 @@ from interpretable_ddts.opt_helpers.replay_buffer import (
 )
 
 # This suppresses a deprecation warning from RLModuleConfig
-import logging
 __old_level = _deprecation_logger.getEffectiveLevel()
 _deprecation_logger.setLevel(logging.ERROR)
 RLModuleConfig()
@@ -30,8 +29,8 @@ _deprecation_logger.setLevel(__old_level)
 
 
 if TYPE_CHECKING:
-    from ray.rllib.core.rl_module.default_model_config import DefaultModelConfig
     import gymnasium as gym
+    from ray.rllib.core.rl_module.default_model_config import DefaultModelConfig
 
 def init_rule_list(num_rules, dim_in, dim_out):
     weights = np.random.rand(num_rules, dim_in)
@@ -80,7 +79,7 @@ class DDTModule(PPOTorchRLModule):
             )
 
     def setup(self) -> None:
-        #super().setup() # Might create more modules, e.g. encoder
+        # super().setup() # Might create more modules, e.g. encoder
         assert isinstance(self.model_config, dict)
 
         self.bot_name = self.model_config["bot_name"] + '_'
@@ -92,7 +91,7 @@ class DDTModule(PPOTorchRLModule):
             if str(num_rules) + '_rules' not in self.bot_name:
                 self.bot_name += str(num_rules)+'_rules'
             init_weights, init_comparators, init_leaves = init_rule_list(
-                num_rules, input_dim, output_dim
+                num_rules, input_dim, output_dim,
             )
         else:
             init_weights = None
@@ -143,7 +142,7 @@ class DDTModule(PPOTorchRLModule):
                    if self.config.inference_only
                    else {CRITIC: inputs}
                 ),
-            }
+            },
         }
 
 
@@ -172,7 +171,7 @@ class DDTModuleGymRunner(DDTModule, AgentBase):
         )
         return True
 
-    def setup(self, duplicate=False) -> None:
+    def setup(self, *, duplicate=False) -> None:
         super().setup()
         self.rewards_file = None
         self._version = None
@@ -199,6 +198,6 @@ class DDTModuleGymRunner(DDTModule, AgentBase):
         ray.train.report(
             checkpoint=None,
             metrics={
-                EPISODE_RETURN_MEAN: reward
+                EPISODE_RETURN_MEAN: reward,
             },
         )

@@ -17,9 +17,33 @@ exclude = '''
 '''
 
 [tool.ruff]
-line-length = 110
-lint.select = ["E", "F", "W", "N", "D20"]
-ignore = ["D205"]
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "W",
+  "N",
+  "PIE",
+  "D20",
+  "BLE",
+  "FBT",
+  "B",
+  "COM818",
+  "C4",
+  "T100",
+  "FA102",
+  "ISC",
+  "ICN",
+  "LOG",
+  "G",
+]
+ignore = [
+  "D203",
+  
+  "D205",
+]
 exclude = [
     ".git",
     ".mypy_cache",

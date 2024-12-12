@@ -11,15 +11,16 @@ from typing import Optional, Union
 from pathlib import Path
 
 def save_ddt(fn, model):
-    checkpoint = dict()
-    mdl_data = dict()
-    mdl_data['weights'] = model.layers
-    mdl_data['comparators'] = model.comparators
-    mdl_data['leaf_init_information'] = model.leaf_init_information
-    mdl_data['action_probs'] = model.action_probs
-    mdl_data['alpha'] = model.alpha
-    mdl_data['input_dim'] = model.input_dim
-    mdl_data['is_value'] = model.is_value
+    checkpoint = {}
+    mdl_data = {
+        'weights': model.layers,
+        'comparators': model.comparators,
+        'leaf_init_information': model.leaf_init_information,
+        'action_probs': model.action_probs,
+        'alpha': model.alpha,
+        'input_dim': model.input_dim,
+        'is_value': model.is_value,
+    }
     checkpoint['model_data'] = mdl_data
     torch.save(checkpoint, fn)
 
@@ -57,10 +58,10 @@ class DDTAgent(AgentBase):
         bot_name="DDT",
         input_dim=4,
         output_dim=2,
+        *,
         rule_list=False,
         num_rules=4,
         version: Optional[int] = None,
-        *,
         use_gpu=False,
         save_output=True,
         _duplicate=False,
@@ -140,15 +141,20 @@ class DDTAgent(AgentBase):
         )
         return True
 
-    def save(self, fn: Union[Path, str]='last', *, force_save: bool=False):
+    def save(self, path: Union[Path, str]='last', *, force_save: bool=False):
         """
-        force_save: Still saves the output even in `save_output` is False
+        The two outputs are saved as two separate files named
+
+        ``str(path) + self.bot_name + '_actor|_critic' + f'_v{self.version}.pth.tar'``
+
+        Args:
+            force_save: Still saves the output even in `save_output` is False
         """
         assert self.version is not None
         if not (self.save_output or force_save):
             return
-        act_fn = str(fn) + self.bot_name + '_actor' + f'_v{self.version}.pth.tar'
-        val_fn = str(fn) + self.bot_name + "_critic" + f"_v{self.version}.pth.tar"
+        act_fn = str(path) + self.bot_name + '_actor' + f'_v{self.version}.pth.tar'
+        val_fn = str(path) + self.bot_name + "_critic" + f"_v{self.version}.pth.tar"
 
         save_ddt(act_fn, self.action_network)
         save_ddt(val_fn, self.value_network)
@@ -174,7 +180,7 @@ class DDTAgent(AgentBase):
             'rule_list': self.rule_list,
             'output_dim': self.output_dim,
             'input_dim': self.input_dim,
-            'num_rules': self.num_rules
+            'num_rules': self.num_rules,
         }
 
     def __setstate__X(self, state):
@@ -203,7 +209,7 @@ class DDTAgent(AgentBase):
                              version=self.version,
                              save_output=self.save_output,
                              _duplicate=True,
-                             use_gpu=False  # <-----
+                             use_gpu=False,  # <-----
                              )
         new_agent.__setstate__X(self.__getstate__X())
         return new_agent

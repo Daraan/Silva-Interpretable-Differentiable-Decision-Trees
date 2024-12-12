@@ -30,7 +30,7 @@ RE_PARSE_FILENAME = re.compile(
     r"(?P<env>[^_]+?)(?P<GPU>GPU)?"
     r"_(?P<features>(?P<num>\d+)_(?P<typ>[^_]+))"
     r"_actor"
-    r"_v(?P<version>\d+)"
+    r"_v(?P<version>\d+)",
 )
 
 class Result(NamedTuple):
@@ -41,7 +41,14 @@ class Result(NamedTuple):
     discrete_reward_std: float  # np.std(crispy_reward)
 
 
-def evaluate_model(fn: str | Path, env: str | gym.Env, verbose: bool | int=1, count: Optional[tuple[int, int]]=None, *, render_mode=None) -> Result | None:
+def evaluate_model(
+    fn: str | Path,
+    env: str | gym.Env,
+    verbose: bool | int = 1,
+    count: Optional[tuple[int, int]] = None,
+    *,
+    render_mode=None,
+) -> Result | None:
     num_runs = 15
 
     if not isinstance(env, gym.Env):
@@ -59,9 +66,8 @@ def evaluate_model(fn: str | Path, env: str | gym.Env, verbose: bool | int=1, co
     final_deep_actor_fn = os.path.join(MODEL_DIR, fn)
     try:
         fda = load_ddt(final_deep_actor_fn)
-    except FileNotFoundError as e:
-        print(e)
-        logging.error(f"File not found: {final_deep_actor_fn}")
+    except FileNotFoundError:
+        logging.error("File not found: %s", final_deep_actor_fn)
         return None
 
     policy_agent = DDTAgent(bot_name='crispytester',
@@ -75,13 +81,15 @@ def evaluate_model(fn: str | Path, env: str | gym.Env, verbose: bool | int=1, co
     for _ in range(15):
         if env == "FindAndDefeatZerglings":
             try:
-                reward, replay_buffer = micro_episode(None, policy_agent, game_mode=env)
-            except Exception as e:
-                print(e)
+                reward, replay_buffer = micro_episode(None, policy_agent, game_mode="FindAndDefeatZerglings")
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception:
+                logging.exception("Error in micro_episode")
                 continue
         else:
             reward, replay_buffer = gym_episode(None, gym_env, policy_agent, render_mode=render_mode)
-        master_states.extend(replay_buffer['states'])
+        master_states.extend(replay_buffer["states"])
         reward_after_five.append(reward)
 
     # discrete
@@ -93,18 +101,22 @@ def evaluate_model(fn: str | Path, env: str | gym.Env, verbose: bool | int=1, co
         if env == "FindAndDefeatZerglings":
             try:
                 crispy_out, replay_buffer = micro_episode(None, policy_agent, env)
-            except Exception as e:
-                print(e)
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception:
+                logging.exception("Error in micro_episode")
                 crispy_out = -3
                 continue
         elif env in ['cart', 'lunar']:
             crispy_out, replay_buffer = gym_episode(None, gym_env, policy_agent)
+        else:
+            raise ValueError(f"Unknown environment {env}")
 
         crispy_reward.append(crispy_out)
     if verbose:
         print(f"FN = {fn}\n"
             f"Average reward after 5 runs is {np.mean(reward_after_five):.3f}\n"
-            f"Average reward for the crispy network after {num_runs} runs is {np.mean(crispy_reward):.3f}\n"
+            f"Average reward for the crispy network after {num_runs} runs is {np.mean(crispy_reward):.3f}\n",
         )
     elif count is not None:
         # not a precise but estimated progress count
@@ -118,6 +130,7 @@ def evaluate_model(fn: str | Path, env: str | gym.Env, verbose: bool | int=1, co
         np.mean(crispy_reward).item(),
         np.std(crispy_reward).item(),
     )
+
 
 def search_for_good_model(env, n_jobs=5, verbose=1):
     # Be sure to comment out gym_runner.gym_episode env.render
@@ -147,13 +160,16 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
         verbose = False
     elif verbose == "auto":
         verbose = True
-    delayed_functions = [delayed(evaluate_model)(fn.relative_to(model_path), env, verbose, (i, total)) for i, fn in enumerate(files, 1)]
+    delayed_functions = [
+        delayed(evaluate_model)(fn.relative_to(model_path), env, verbose=verbose, count=(i, total))
+        for i, fn in enumerate(files, 1)
+    ]
     filenames = [fn.relative_to(model_path).name for fn in files]
 
     all_results_ = cast("list[Result | None]", Parallel(n_jobs=25)(delayed_functions))
     if not all(all_results_):
         all_results: "list[Result]" = list(
-            filter(None, all_results_)
+            filter(None, all_results_),
         )  # filter potential FileNotFound
         filenames = [fn for fn, res in zip(filenames, all_results_) if res]
     else:
@@ -280,11 +296,13 @@ def run_a_model(fn: str, args_in: argparse.Namespace, seed: Optional[int]=0, ver
 
     policy_agent.action_network = crispy_actor
     crispy_reward = []
-    for i in range(num_runs):
+    for _i in range(num_runs):
         if env == 'FindAndDefeatZerglings':
             crispy_out, replay_buffer = micro_episode(None, policy_agent, game_mode=env)
         elif env in ['cart', 'lunar']:
             crispy_out, replay_buffer = gym_episode(None, gym_env, policy_agent)
+        else:
+            raise ValueError(f"Unknown environment {env}")
         crispy_reward.append(crispy_out)
 
     leaves = crispy_actor.leaf_init_information
@@ -296,8 +314,10 @@ def run_a_model(fn: str, args_in: argparse.Namespace, seed: Optional[int]=0, ver
         ddt_weights = crispy_actor.layers.detach().numpy()
         print(np.argmax(np.abs(ddt_weights), axis=1))
     if verbose:
-        print(f"Average reward after {num_runs} runs is {reward_after_five/num_runs:.3f}\n"
-            f"Average reward for the crispy network after {num_runs} runs is {np.mean(crispy_reward)} with std {np.std(crispy_reward):.3f}"
+        print(
+            f"Average reward after {num_runs} runs is {reward_after_five/num_runs:.3f}\n"
+            f"Average reward for the crispy network after {num_runs} runs is {np.mean(crispy_reward)} "
+            f"with std {np.std(crispy_reward):.3f}",
         )
     return reward_after_five / num_runs, np.mean(crispy_reward), np.std(crispy_reward)
 
@@ -306,7 +326,10 @@ def fc_state_dict(fn=''):
     fc_model = torch.load(fn)
     print(fc_model['actor'])
 
-def test_model(discrete_fn: Path | str, seed=None, verbose:int=True, count: Optional[tuple[int, int]]=None):
+
+def test_model(
+    discrete_fn: Path | str, *, seed=None, verbose: int = True, count: Optional[tuple[int, int]] = None,
+):
     """Allows parallel execution of run_a_model"""
     if verbose:
         print("\n------------------\nTesting", discrete_fn)
@@ -320,7 +343,7 @@ def test_model(discrete_fn: Path | str, seed=None, verbose:int=True, count: Opti
     (
         avg_reward_diff,
         avg_reward_discrete,
-        std_reward_discrete
+        std_reward_discrete,
     ) = run_a_model(filename, args, seed=seed, verbose=verbose)
     # Gather results
     header = match_filename(filename).groupdict()
@@ -348,22 +371,26 @@ if __name__ == "__main__":
     parser.add_argument('-r', '--run_model', help="run a model?", action="store_true")
     parser.add_argument('-n', '--model_fn', help="model filename for running", type=str, default="")
     parser.add_argument(
-        "-s", "--seed", help="Seed; use -1 for None", type=int, default=12496
+        "-s", "--seed", help="Seed; use -1 for None", type=int, default=12496,
     )
     parser.add_argument(
-        "-a", "--all", help="Test all models; not only the best", action="store_true", default=False
+        "-a", "--all", help="Test all models; not only the best", action="store_true", default=False,
     )
     parser.add_argument(
-        "-v", "--verbose", help="Verbose output. If more than 500 models are checked switches to False", action="store_true", default="auto"
+        "-v",
+        "--verbose",
+        help="Verbose output. If more than 500 models are checked switches to False",
+        action="store_true",
+        default="auto",
     )
     parser.add_argument(
-        "--silent", help="No output", action="store_true", default=False
+        "--silent", help="No output", action="store_true", default=False,
     )
     parser.add_argument(
-        "-N", "--n_jobs", help="Number of jobs for parallel execution", type=int, default=25
+        "-N", "--n_jobs", help="Number of jobs for parallel execution", type=int, default=25,
     )
     parser.add_argument(
-        "--test", "--dry-run", help="Do not save any outputs", action="store_true", default=False
+        "--test", "--dry-run", help="Do not save any outputs", action="store_true", default=False,
     )
 
     args = parser.parse_args()
@@ -389,8 +416,9 @@ if __name__ == "__main__":
             results_df.to_csv(f"../outputs/results_{envir}.csv")
     else:
         # reuse saved data
-        results_df = (pd.read_csv(f"../outputs/results_{envir}.csv")
-                      .set_index(["env", "method", "sub-method", "capacity", "GPU", "version", "episode"], drop=True))
+        results_df = pd.read_csv(f"../outputs/results_{envir}.csv").set_index(
+            ["env", "method", "sub-method", "capacity", "GPU", "version", "episode"], drop=True,
+        )
     # Query df which is the best model
     best_disc_models = {}
     for sub_method in ["leaves", "rules"]:
@@ -408,10 +436,11 @@ if __name__ == "__main__":
             disc_std,
         ) = best_model_from_data(sub_df)
         print(
-            f"Best differentiable {sub_method} file: {best_fuzzy_fn} with {max_fuzzy_reward} reward and {max_fuzzy_std} std"
+            f"Best differentiable {sub_method} file: {best_fuzzy_fn} with {max_fuzzy_reward} reward "
+            f"and {max_fuzzy_std} std",
         )
         print(
-            f"Best discrete {sub_method} file: {best_fn} with {disc_reward} reward and {disc_std} std"
+            f"Best discrete {sub_method} file: {best_fn} with {disc_reward} reward and {disc_std} std",
         )
         best_disc_models[sub_method] = os.path.join(MODEL_DIR, best_fn)
     if args.run_model:
@@ -430,7 +459,8 @@ if __name__ == "__main__":
         if args.all:  # execute parallel
             total = len(models)
             eval_functions = [
-                delayed(test_model)(discrete_fn, SEED, False, (i, total)) for i, discrete_fn in enumerate(models, 1)
+                delayed(test_model)(discrete_fn, seed=SEED, verbose=False, count=(i, total))
+                for i, discrete_fn in enumerate(models, 1)
             ]
             results = Parallel(n_jobs=25)(eval_functions)
             print("\n")
@@ -444,6 +474,14 @@ if __name__ == "__main__":
         if not args.test:
             results_df.to_csv(f"../outputs/results_{envir}.csv")
         if args.all:
-            print("\nAll results:\n", results_df[["fn", "test_diff_reward", "test_disc_reward", "test_disc_std"]].sort_values("test_disc_reward", ascending=False))
+            print(
+                "\nAll results:\n",
+                results_df[["fn", "test_diff_reward", "test_disc_reward", "test_disc_std"]].sort_values(
+                    "test_disc_reward", ascending=False,
+                ),
+            )
         else:
-            print("\nBest results:\n", results_df.loc[best_results, ["fn", "test_diff_reward", "test_disc_reward", "test_disc_std"]])
+            print(
+                "\nBest results:\n",
+                results_df.loc[best_results, ["fn", "test_diff_reward", "test_disc_reward", "test_disc_std"]],
+            )

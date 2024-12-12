@@ -101,7 +101,7 @@ class AgentBase:
     def save_reward(self, reward: float | SupportsFloat):
         raise NotImplementedError
 
-    def save(self, path: str):
+    def save(self, path: Path | str):
         ...
 
     def get_action(self, observation, max_inputs:int = 10):
@@ -123,14 +123,14 @@ class AgentBase:
             self.last_value_pred = value_pred.view(-1).cpu()
 
             if self.action_network.input_dim > max_inputs:
-                self.last_action = inds[action].cpu()
+                self.last_action = inds[action].cpu()  # pyright: ignore[reportPossiblyUnboundVariable]
             else:
                 self.last_action = action.cpu()
         if self.action_network.input_dim > max_inputs:
-            action = inds[action].item()
+            action = inds[action].item()  # pyright: ignore[reportPossiblyUnboundVariable]
         else:
             action = action.item()
-        return action
+        return action  # type: ignore
 
     def end_episode(self, timesteps):
         assert self.version is not None and self.rewards_file

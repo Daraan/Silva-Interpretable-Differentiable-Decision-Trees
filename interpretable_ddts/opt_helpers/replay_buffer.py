@@ -1,4 +1,5 @@
 import random
+from typing import Any
 import torch
 import numpy as np
 
@@ -19,7 +20,7 @@ class ReplayBufferSingleAgent(object):
         self.deeper_full_probs_list = []
         self.step = -1
 
-    def __getstate__(self):
+    def __getstate__(self) -> dict[str, Any]:
         all_data = {
             'states': self.states_list,
             'actions': self.action_probs_list,
@@ -33,11 +34,11 @@ class ReplayBufferSingleAgent(object):
             'advantage_list': self.advantage_list,
             'deeper_advantage_list': self.deeper_advantage_list,
             'full_probs_list': self.full_probs_list,
-            'deeper_full_probs_list': self.deeper_full_probs_list
+            'deeper_full_probs_list': self.deeper_full_probs_list,
         }
         return all_data
 
-    def __setstate__(self, state):
+    def __setstate__(self, state) -> None:
         self.states_list = state['states']
         self.action_probs_list = state['actions']
         self.value_list = state['values']
@@ -52,7 +53,7 @@ class ReplayBufferSingleAgent(object):
         self.full_probs_list = state['full_probs_list']
         self.deeper_full_probs_list = state['deeper_full_probs_list']
 
-    def extend(self, state):
+    def extend(self, state) -> None:
         self.states_list.extend(state['states'])
         self.action_probs_list.extend(state['actions'])
         self.value_list.extend(state['values'])
@@ -77,7 +78,7 @@ class ReplayBufferSingleAgent(object):
                last_action=None,
                full_probs_vector=None,
                deeper_full_probs_vector=None,
-               rewards=None):
+               rewards=None) -> None:
         self.states_list.append(obs)
         self.hidden_state_list.append(recurrent_hidden_states)
         self.action_probs_list.append(action_log_probs)
@@ -91,7 +92,7 @@ class ReplayBufferSingleAgent(object):
         # self.done_list.append(done)
         self.step += 1
 
-    def clear(self):
+    def clear(self) -> None:
         del self.states_list[:]
         del self.hidden_state_list[:]
         del self.value_list[:]
@@ -123,7 +124,7 @@ class ReplayBufferSingleAgent(object):
             'action_taken': self.action_taken_list[t],
             'deeper_advantage': self.deeper_advantage_list[t],
             'full_prob_vector': self.full_probs_list[t],
-            'deeper_full_prob_vector': self.deeper_full_probs_list[t]
+            'deeper_full_prob_vector': self.deeper_full_probs_list[t],
         }
         return sample_back
 
@@ -131,7 +132,7 @@ def discount_reward(reward, value, deeper_value):
     R = 0
     rewards = []
     all_rewards = reward
-    reward_sum = sum(all_rewards)
+    #reward_sum = sum(all_rewards)
     all_values = value
     deeper_all_values = deeper_value
     # Discount future rewards back to the present using gamma

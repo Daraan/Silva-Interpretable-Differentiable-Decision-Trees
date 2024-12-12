@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import logging
 import math
@@ -10,8 +12,8 @@ import gymnasium as gym
 import ray
 from packaging.version import parse as parse_version
 from ray import train, tune
-from ray.air.integrations.wandb import WandbLoggerCallback, setup_wandb
 from ray.air.integrations.comet import CometLoggerCallback
+from ray.air.integrations.wandb import WandbLoggerCallback, setup_wandb
 from ray.experimental import tqdm_ray
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
@@ -48,7 +50,7 @@ logger = logging.getLogger(__name__)
 _ConfigType = TypeVar("_ConfigType", bound=PPOConfig)
 
 def create_ddt_config(
-    args: argparse.Namespace, env: str | gym.Env, config_class: type[_ConfigType] = PPOConfig
+    args: argparse.Namespace, env: str | gym.Env, config_class: type[_ConfigType] = PPOConfig,
 ) -> tuple[_ConfigType, RLModuleSpec]:
     config = config_class()
     config.environment(env)
@@ -206,7 +208,7 @@ if __name__ == "__main__":
     parser.add_argument("--wandb", "-wb", help="Log to WandB", action="store_true", default=False)
     parser.add_argument(
         "--comet", nargs="?", help="Log to Comet", const="1", default="1",
-        choices=["offline", "0", "1", "False", "off"]
+        choices=["offline", "0", "1", "False", "off"],
     )
     parser.add_argument(
         "-rl",
@@ -239,7 +241,7 @@ if __name__ == "__main__":
 
     config, module_spec = create_ddt_config(args, env)
 
-    def build_and_train(index: Optional[int | dict[str, Any]]=None, use_pbar=True):
+    def build_and_train(index: Optional[int | dict[str, Any]]=None, *, use_pbar=True):
         """
         Args:
             index: Is a `dict` / `param_spec` if this is used by Tune.
@@ -265,7 +267,7 @@ if __name__ == "__main__":
             )
             metrics = {
                 TRAIN_METRIC_RETURN_MEAN: result[ENV_RUNNER_RESULTS].get(
-                    EPISODE_RETURN_MEAN, None
+                    EPISODE_RETURN_MEAN, None,
                 ),
                 EVAL_METRIC_RETURN_MEAN: eval_mean,
             }
@@ -282,7 +284,7 @@ if __name__ == "__main__":
                     f"Mean Rew: {metrics[TRAIN_METRIC_RETURN_MEAN]:>6.1f} |"
                     f"Max Rew: {result['env_runners']['episode_return_max']:>4.0f} |"
                     f"Eval Rew: {eval_mean:>6.1f} |"
-                    f"Rolling Eval Rew: {running_eval_reward:>6.1f} |"
+                    f"Rolling Eval Rew: {running_eval_reward:>6.1f} |",
                 )
             except KeyError as e:
                 print("Error with Key", e)
@@ -295,7 +297,7 @@ if __name__ == "__main__":
     if False:
         module_spec.module_class = DDTModuleGymRunner
         module_spec.model_config.update({
-            "save_output": False
+            "save_output": False,
         })
         module_spec.model_config.update(
             {
@@ -304,7 +306,7 @@ if __name__ == "__main__":
                 "vf_double_output": True,
                 "action_use_softmax": True,
                 "use_silva_loss": True,
-            }
+            },
         )
         trainable = partial(
             gym_runner.start_process,
@@ -322,7 +324,7 @@ if __name__ == "__main__":
                 dim_in=dim_in,
                 dim_out=dim_out,
                 render_mode=None,
-            )
+            ),
         )
     else:
         trainable = partial(build_and_train, use_pbar=True)
@@ -349,7 +351,7 @@ if __name__ == "__main__":
                 monitor_gym=False,
                 # Special comment
                 notes="test save code",
-            )
+            ),
         )
     else:
         # could use wandb offline
@@ -361,7 +363,7 @@ if __name__ == "__main__":
                 disabled=args.comet == "offline",  # do not upload
                 save_checkpoints=False,
                 tags=["test", "dev"],
-                
+
                 # Other keywords see: https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment/
                 auto_metric_step_rate=10,  # How often batch metrics are logged
                 log_git_metadata=True,  # disabled by rllib
@@ -372,13 +374,13 @@ if __name__ == "__main__":
                 auto_histogram_weight_logging=True,  # Default False
                 auto_histogram_gradient_logging=True,  # Default False
                 auto_histogram_activation_logging=True,  # Default False
-            )
+            ),
         )
     N_JOBS = 2
     # Will use these resources per job
     # NOTE: Even if not used will allocate these resources per run
     trainable_with_resources = tune.with_resources(trainable, tune.PlacementGroupFactory(
-        [{'CPU': 1.0}] + [{'CPU': 1.0}] * (0 if args.not_parallel else 4)
+        [{'CPU': 1.0}] + [{'CPU': 1.0}] * (0 if args.not_parallel else 4),
     ))
     tune.Tuner(
         trainable,  # Note: possibly can also be a list
@@ -390,7 +392,7 @@ if __name__ == "__main__":
             #metric=
             #    (EVALUATION_RESULTS + "/" + ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
             #     if config.evaluation_interval else ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN),
-            mode="max"
+            mode="max",
         ),
         run_config=train.RunConfig(
             # Trial artifacts are uploaded periodically to this directory

@@ -11,7 +11,8 @@ from typing import Union, Optional
 
 
 class BaselineFCNet(nn.Module):
-    def __init__(self, input_dim, is_value=False, output_dim=2, hidden_layers=1):
+
+    def __init__(self, input_dim, *, output_dim=2, is_value=False, hidden_layers=1):
         super(BaselineFCNet, self).__init__()
         self.lin1 = nn.Linear(input_dim, input_dim)
         self.lin2 = None
@@ -46,7 +47,7 @@ class MLPAgent(AgentBase):
         num_hidden=1,
         version: Optional[int] = None,
         *, _duplicate=False,
-        save_output: bool = True
+        save_output: bool = True,
     ):
         # bot_name before calling super
         self.bot_name = bot_name + "_" + str(num_hidden) + '_hid'
@@ -120,18 +121,20 @@ class MLPAgent(AgentBase):
                                   rewards=reward)
         return True
 
-    def save(self, fn: Union[Path, str]='last', *, force_save: bool=False):
+    def save(self, path: Union[Path, str]='last', *, force_save: bool=False):
         """
-        force_save: Still saves the output even in `save_output` is False
+        Args:
+            force_save: Still saves the output even in `save_output` is False
         """
         assert self.version is not None
         if not (self.save_output or force_save):
             #logger.debug("Not saving output, because `save_output` is False")
             return
-        checkpoint = dict()
-        checkpoint['actor'] = self.action_network.state_dict()
-        checkpoint['value'] = self.value_network.state_dict()
-        save_path = Path(str(fn))
+        checkpoint = {
+            'actor' : self.action_network.state_dict(),
+            'value' : self.value_network.state_dict(),
+        }
+        save_path = Path(str(path))
         save_path = save_path.with_name(save_path.name + self.bot_name + f"_v{self.version}" + ".pth.tar")
         torch.save(checkpoint, save_path)
 
@@ -151,7 +154,7 @@ class MLPAgent(AgentBase):
             'ppo': self.ppo,
             'actor_opt': self.actor_opt,
             'value_opt': self.value_opt,
-            'num_hidden': self.num_hidden
+            'num_hidden': self.num_hidden,
         }
 
     def __setstate__(self, state):
@@ -175,9 +178,9 @@ class MLPAgent(AgentBase):
                         f"output_dim: {self.output_dim}",
                         f"num_hidden: {self.num_hidden}",
                         "rule_list: False",
-                    ]
+                    ],
                 )
-                + "\n"
+                + "\n",
             )
 
     def duplicate(self):
@@ -188,7 +191,7 @@ class MLPAgent(AgentBase):
             num_hidden=self.num_hidden,
             version=self.version,
             save_output=self.save_output,
-            _duplicate=True
+            _duplicate=True,
             )
         new_agent.__setstate__(self.__getstate__())
         return new_agent

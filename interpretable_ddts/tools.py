@@ -29,7 +29,7 @@ RE_PARSE_FILENAME = re.compile(
     r"(?P<env>[^_]+?)(?P<GPU>GPU)?"
     r"_(?P<features>(?P<num>\d+)_(?P<typ>[^_]+))"
     r"(?(episode)_actor|)"
-    r"_v(?P<version>\d+)"
+    r"_v(?P<version>\d+)",
 )
 
 RE_PARSE_FILENAME_OLD = re.compile(
@@ -39,7 +39,7 @@ RE_PARSE_FILENAME_OLD = re.compile(
     r"(?P<env>[^_]+?)(?P<GPU>GPU)?"
     r"_?(?P<features>(?P<num>\d+)_(?P<typ>[^_]+))"  # no _ before features in old format
     r"(?(episode)_actor_|)"
-    r"(?:_v(?P<version>\d+))?"  # no version in old format
+    r"(?:_v(?P<version>\d+))?",  # no version in old format
 )
 
 def match_filename(filename: str) -> "re.Match[str] | None":
@@ -79,10 +79,10 @@ def load_rewards(files: Iterable[Union[str, Path]]):
                         int(header["num"]),
                         bool(header["GPU"]),
                         int(header["version"]),
-                    )
+                    ),
                 ],
                 names=["env", "method", "sub-method", "capacity", "GPU", "version"],
-            )
+            ),
         )
         for file, header in zip(files, headers)
     )
@@ -108,7 +108,7 @@ def load_output(
         df_2.drop(columns=["fn"], inplace=True)
     agg_df = (
         df_2.groupby(list(index)).aggregate(
-            aggregate_version
+            aggregate_version,
         ).sort_values(aggregate_column, ascending=False)
     )
     return agg_df
@@ -117,15 +117,19 @@ def load_output(
 def create_single_index(header: dict[str, str]):
     return pd.MultiIndex(
         (
-                header["env"],
-                header["method"],
-                header["typ"],
-                int(header["num"]),
-                bool(header["GPU"]),
-                int(header.get("version", 99) if header.get("version", 99) is not None else 99),  # no version in old format
-                int(header["episode"]),
+            header["env"],
+            header["method"],
+            header["typ"],
+            int(header["num"]),
+            bool(header["GPU"]),
+            int(
+                header.get("version", 99)
+                if header.get("version", 99) is not None
+                else 99,
+            ),  # no version in old format
+            int(header["episode"]),
         ),
-         names=[
+        names=[
             "env",
             "method",
             "sub-method",
@@ -146,7 +150,11 @@ def create_df_index(metadata: Iterable[dict[str, str]]):
                 header["typ"],
                 int(header["num"]),
                 bool(header["GPU"]),
-                int(header.get("version", 99) if header.get("version", 99) is not None else 99),  # no version in old format
+                int(
+                    header.get("version", 99)
+                    if header.get("version", 99) is not None
+                    else 99,
+                ),  # no version in old format
                 int(header["episode"]),
             )
             for header in metadata
@@ -175,7 +183,7 @@ def _split_seed(seed: Optional[int]) -> tuple[int, int] | tuple[None, None]:
     gen = random.Random(seed)
     return gen.randrange(2**32), gen.randrange(2**32)
 
-def seed_everything(env, seed: Optional[int], torch_manual=False):
+def seed_everything(env, seed: Optional[int], *, torch_manual=False):
     """
     Args:
         torch_manual: If True, will set torch.manual_seed and torch.cuda.manual_seed_all
@@ -195,7 +203,7 @@ def seed_everything(env, seed: Optional[int], torch_manual=False):
     elif torch_manual:
         seed, next_seed = _split_seed(next_seed)
         torch.manual_seed(
-            seed
+            seed,
         )  # setting torch manual seed causes bad models, # ok seed 124
         seed, next_seed = _split_seed(next_seed)
         torch.cuda.manual_seed_all(seed)

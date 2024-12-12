@@ -5,7 +5,7 @@ import argparse
 from contextlib import nullcontext
 import copy
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Iterable, Optional, TypeGuard, Union, cast
 
 import gymnasium as gym
 import numpy as np
@@ -27,6 +27,7 @@ from interpretable_ddts.tools import seed_everything
 if TYPE_CHECKING:
     from multiprocessing.synchronize import Lock
     from ray.rllib.core.rl_module.rl_module import RLModuleSpec  # for performance import only if used
+    from gymnasium.core import ObsType, ActType
 
 
 GYM_VERSION = parse_version(gym.__version__)
@@ -34,21 +35,21 @@ GYM_V_0_26 = GYM_VERSION >= Version("0.26")
 """First gymnasium version"""
 GYM_V1 = GYM_VERSION >= Version("1.0.0")
 
-def run_episode(q, env: gym.Env, agent_in: AgentBase, *, render_mode=None) -> tuple[float, dict[str, Any]]:
+
+def run_episode(
+    q, env: gym.Env[ObsType, ActType], agent_in: AgentBase, *, render_mode=None,
+) -> tuple[float, dict[str, Any]]:
     agent = agent_in.duplicate()
 
-    # docstring: returns an initial observation.
-    # If the environment already has a random number generator and reset is called with seed=None, the RNG should not be reset.
-    # Moreover, reset should (in the typical use case) be called with an integer seed right after initialization and then never again.
-    # Reset environment and record the starting state
+    # Reset without resetting the RNG generator to get an initial observation
     if GYM_V_0_26:
         state, _ = env.reset()
     else:
-        state = env.reset()
+        state: ObsType = env.reset()  # type: ignore[assignment]
 
     done = False
     while not done:
-        action = agent.get_action(state)
+        action: ActType = agent.get_action(state)  # pyright: ignore[reportAssignmentType]
         # Step through environment using chosen action
         if GYM_V_0_26:
             state, reward, terminated, truncated, _ = env.step(action)
@@ -82,18 +83,22 @@ def main(
     episodes,
     agent: Union[DDTAgent, MLPAgent, AgentBase],
     env: str | gym.Env,
+    *,
     seed=None,
-    pbar: bool | Iterable[int]=True,
+    pbar: bool | Iterable[int] = True,
     render_mode=None,
 ):
     running_reward_array = []
     if agent.save_output:
+        assert agent.rewards_file
         models_path = Path("../models") / (agent.bot_name + f"_v{agent.version}")
         rewards_path = Path('../txts')
         models_path.mkdir(parents=True, exist_ok=True)
         rewards_path.mkdir(parents=True, exist_ok=True)
         # Create a link to the rewards file
         (models_path / agent.rewards_file.name).symlink_to(agent.rewards_file.resolve())
+    elif TYPE_CHECKING:
+        models_path = Path("Is not used")
 
     if isinstance(env, str):
         if env == "lunar":
@@ -112,7 +117,7 @@ def main(
             episode_trigger=lambda x: x % 250 == 0,
         )
         env = RecordEpisodeStatistics(env)
-    next_seed, _ = seed_everything(env, seed)
+    next_seed, _ = seed_everything(env=env, seed=seed)
     if GYM_V_0_26 and next_seed is not None:
         # Note that with seed=None, the RNG for the environment will not be reset
         env.reset(seed=next_seed)
@@ -126,6 +131,9 @@ def main(
         use_pbar = False
     else:
         use_pbar = True
+    def is_pbar(pbar) -> TypeGuard[tqdm]:
+        return use_pbar
+    reward = episode = running_reward = float("nan")
     for episode in pbar:
         returned_object = run_episode(
             None,
@@ -145,24 +153,31 @@ def main(
         agent.end_episode(reward)
 
         running_reward = sum(running_reward_array[-100:]) / float(min(100.0, len(running_reward_array)))
-        if use_pbar and episode % 2 == 0:
+        if is_pbar(pbar) and episode % 2 == 0:
             pbar.set_description(
-                f"{agent.bot_name}_v{agent.version} |Ep. {episode:<4} |Rwrd: {reward:>4.0f} |Avg. Rwrd: {running_reward:>4.0f} |Len {returned_object[1]['steps']:>3}"
+                f"{agent.bot_name}_v{agent.version} "
+                f"|Ep. {episode:<4} |Rwrd: {reward:>4.0f} "
+                f"|Avg. Rwrd: {running_reward:>4.0f} "
+                f"|Len {returned_object[1]['steps']:>3}",
             )
         if agent.save_output and episode % 500 == 0:
             agent.save(models_path / f"{episode}th")
     # Save final episode
-    if use_pbar and episode % 50 != 0:  # pyright: ignore[reportPossiblyUnboundVariable]
+    if is_pbar(pbar) and episode % 50 != 0:
         pbar.set_description(
-            f"{agent.bot_name}_v{agent.version} |Ep. {episode:<4} |Rwrd: {reward:>4.0f} |Avg. Rwrd: {running_reward:>4.0f} |Len {returned_object[1]['steps']:>3}"  # pyright: ignore[reportPossiblyUnboundVariable]
+            f"{agent.bot_name}_v{agent.version} "
+            f"|Ep. {episode:<4} |Rwrd: {reward:>4.0f} "
+            f"|Avg. Rwrd: {running_reward:>4.0f} "
+            f"|Len {returned_object[1]['steps']:>3}",  # pyright: ignore[reportPossiblyUnboundVariable]
         )
     if (
         agent.save_output
-        and episode % 500 != 0  # pyright: ignore[reportPossiblyUnboundVariable]
+        and episode % 500 != 0
     ):
         agent.save(models_path / f"{episode}th")
 
     return running_reward_array
+
 
 def create_rlib_agent(args, init_env: gym.Env):
     from ray.rllib.core.rl_module.rl_module import RLModuleSpec  # noqa: F811
@@ -192,18 +207,16 @@ def create_rlib_agent(args, init_env: gym.Env):
 
 
 def start_process(
-    i, args: argparse.Namespace, init_env: Optional[gym.Env] = None, lock: Optional[Lock]=None
+    i, args: argparse.Namespace, init_env: Optional[gym.Env] = None, lock: Optional[Lock]=None,
 ):
-    """
-    Wrapper of main that can be used in parallel.
-    """
+    """Wrapper of main that can be used in parallel."""
     agent_type: str | RLModuleSpec = args.agent_type
     env_type: str = args.env_type
     seed: Optional[int] = args.seed
     # Initialize with different seed
-    if isinstance(i, int) and False:
+    if isinstance(i, int):
         sub_seed = seed + i if seed is not None else None
-        seed_everything(None, sub_seed, torch_manual=False)
+        seed_everything(None, seed=sub_seed, torch_manual=False)
     seed2 = np.random.randint(0, 1000000)
     if agent_type.__class__.__name__ == "RLModuleSpec":  # avoid expensive import
         bot_name = "rllib" + env_type
@@ -266,7 +279,7 @@ def start_process(
     )
     return {
         "running_reward_mean" : np.mean(reward_array[-100:]),
-        "perfect_episodes" : sum([1 for r in reward_array if r >= 499])
+        "perfect_episodes" : sum([1 for r in reward_array if r >= 499]),
     }
 
 
@@ -282,7 +295,7 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--seed", help="Seed", default=-1, type=int)
     parser.add_argument("-np", "--not_parallel", help="Do not run in parallel", action='store_true', default=False)
     parser.add_argument("-p", "--process_number", help="Process number", type=int, default=0)
-    parser.add_argument("--silent", help="supress prints", action="store_true", default=False,)
+    parser.add_argument("--silent", help="supress prints", action="store_true", default=False)
     parser.add_argument("--test", "--dry-run", help="Do not save any models", action="store_true", default=False)
     parser.add_argument("--render_mode", "-rm", help="Render the environment",
                         type=str, default=None, const="human", nargs='?')

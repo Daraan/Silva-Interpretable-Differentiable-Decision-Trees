@@ -6,15 +6,19 @@ import torch
 import torch.nn as nn
 
 class DDT(nn.Module):
-    def __init__(self,
-                 input_dim,
-                 weights,
-                 comparators,
-                 leaves,
-                 output_dim=None,
-                 alpha=1.0,
-                 is_value=False,
-                 use_gpu=False):
+
+    def __init__(
+        self,
+        *,
+        input_dim,
+        weights,
+        comparators,
+        leaves,
+        output_dim=None,
+        alpha=1.0,
+        is_value=False,
+        use_gpu=False,
+    ):
         super(DDT, self).__init__()
         """
         Initialize the DDT, taking in premade weights for inputs to comparators and sigmoids
@@ -88,7 +92,7 @@ class DDT(nn.Module):
         if type(self.leaf_init_information) is list:
             left_branches = torch.zeros((len(self.layers), len(self.leaf_init_information)))
             right_branches = torch.zeros((len(self.layers), len(self.leaf_init_information)))
-            for n in range(0, len(self.leaf_init_information)):
+            for n in range(len(self.leaf_init_information)):
                 for i in self.leaf_init_information[n][0]:
                     left_branches[i][n] = 1.0
                 for j in self.leaf_init_information[n][1]:
@@ -99,9 +103,9 @@ class DDT(nn.Module):
             elif self.leaf_init_information is None:
                 depth = 4
             left_branches = torch.zeros((2 ** depth - 1, 2 ** depth))
-            for n in range(0, depth):
+            for n in range(depth):
                 row = 2 ** n - 1
-                for i in range(0, 2 ** depth):
+                for i in range(2 ** depth):
                     col = 2 ** (depth - n) * i
                     end_col = col + 2 ** (depth - 1 - n)
                     if row + i >= len(left_branches) or end_col >= len(left_branches[row]):
@@ -160,11 +164,11 @@ class DDT(nn.Module):
                     leaf_index += 1
                 if self.output_dim is None:
                     new_probs = np.random.uniform(
-                        0, 1, self.output_dim
+                        0, 1, self.output_dim,
                     )  # *(1.0/self.output_dim)
                 else:
                     new_probs = np.random.uniform(
-                        0, 1, self.output_dim
+                        0, 1, self.output_dim,
                     ).tolist()  # *(1.0/self.output_dim)
                 self.leaf_init_information.append([sorted(left_path), sorted(right_path), new_probs])
                 new_leaves.append(new_probs)
@@ -198,8 +202,12 @@ class DDT(nn.Module):
 
         left_path_probs = self.left_path_sigs.t()
         right_path_probs = self.right_path_sigs.t()
-        left_path_probs = left_path_probs.expand(input_data.size(0), *left_path_probs.size()) * sig_vals.unsqueeze(1)
-        right_path_probs = right_path_probs.expand(input_data.size(0), *right_path_probs.size()) * one_minus_sig.unsqueeze(1)
+        left_path_probs = left_path_probs.expand(
+            input_data.size(0), *left_path_probs.size(),
+        ) * sig_vals.unsqueeze(1)
+        right_path_probs = right_path_probs.expand(
+            input_data.size(0), *right_path_probs.size(),
+        ) * one_minus_sig.unsqueeze(1)
         left_path_probs = left_path_probs.permute(0, 2, 1)
         right_path_probs = right_path_probs.permute(0, 2, 1)
 

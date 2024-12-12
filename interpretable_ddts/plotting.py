@@ -1,16 +1,15 @@
 # %%
-import re
-from typing import Generator, Iterable, Union
-import seaborn as sns
+from pathlib import Path
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import pandas as pd
-from pathlib import Path
-
-sns.set_theme()
+import seaborn as sns
 
 from interpretable_ddts import tools
 from interpretable_ddts.tools import load_rewards
+
+sns.set_theme()
 
 rewards_dir = Path('txts')
 model_dir = Path('models')

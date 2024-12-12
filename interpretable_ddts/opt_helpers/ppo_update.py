@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 class PPO:
-    def __init__(self, actor_critic_arr, two_nets=True, use_gpu=False):
+    def __init__(self, actor_critic_arr, *, two_nets=True, use_gpu=False):
 
         lr = 1e-3
         eps = 1e-5
@@ -63,7 +63,7 @@ class PPO:
             adv_targ = torch.Tensor([sample["advantage"] for sample in samples])
             reward = torch.Tensor([sample["reward"] for sample in samples])
             old_action_probs = torch.cat(
-                [sample["full_prob_vector"].unsqueeze(0) for sample in samples], dim=0
+                [sample["full_prob_vector"].unsqueeze(0) for sample in samples], dim=0,
             )
             if (
                 True in np.array(np.isnan(adv_targ).tolist())
