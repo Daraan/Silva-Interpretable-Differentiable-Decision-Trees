@@ -1,5 +1,6 @@
+from __future__ import annotations
 import random
-from typing import Any
+from typing import Any, Literal
 import torch
 import numpy as np
 
@@ -21,7 +22,8 @@ class ReplayBufferSingleAgent(object):
         self.step = -1
 
     def __getstate__(self) -> dict[str, Any]:
-        all_data = {
+        """Return all data"""
+        return {
             'states': self.states_list,
             'actions': self.action_probs_list,
             'values': self.value_list,
@@ -36,7 +38,6 @@ class ReplayBufferSingleAgent(object):
             'full_probs_list': self.full_probs_list,
             'deeper_full_probs_list': self.deeper_full_probs_list,
         }
-        return all_data
 
     def __setstate__(self, state) -> None:
         self.states_list = state['states']
@@ -107,12 +108,12 @@ class ReplayBufferSingleAgent(object):
         del self.deeper_full_probs_list[:]
         self.step = 0
 
-    def sample(self):
+    def sample(self) -> dict[str, Any] | Literal[False]:
         # randomly sample a time step
         if len(self.states_list) <= 0:
             return False
         t = random.randint(0, len(self.states_list)-1)
-        sample_back = {
+        return {  # Sampled data
             'state': self.states_list[t],
             'hidden_state': self.hidden_state_list[t],
             'action_prob': self.action_probs_list[t],
@@ -126,7 +127,7 @@ class ReplayBufferSingleAgent(object):
             'full_prob_vector': self.full_probs_list[t],
             'deeper_full_prob_vector': self.deeper_full_probs_list[t],
         }
-        return sample_back
+
 
 def discount_reward(reward, value, deeper_value):
     R = 0

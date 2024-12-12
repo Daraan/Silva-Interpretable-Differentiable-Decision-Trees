@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict
 
 import numpy as np
 import ray.train
@@ -30,7 +30,6 @@ _deprecation_logger.setLevel(__old_level)
 
 if TYPE_CHECKING:
     import gymnasium as gym
-    from ray.rllib.core.rl_module.default_model_config import DefaultModelConfig
 
 def init_rule_list(num_rules, dim_in, dim_out):
     weights = np.random.rand(num_rules, dim_in)
@@ -41,11 +40,20 @@ def init_rule_list(num_rules, dim_in, dim_out):
     leaves.append([[], np.arange(0, num_rules).tolist(), np.random.rand(dim_out)])
     return weights, comparators, leaves
 
+class ModelConfigDict(TypedDict):
+    bot_name: str
+    num_rules: int
+    rule_list: bool
+    save_output: bool
+    use_gpu: bool
+    action_use_softmax: bool
+    vf_double_output: bool
+
 class DDTModule(PPOTorchRLModule):
     observation_space: gym.Space
     action_space: gym.Space
     config: RLModuleConfig
-    model_config: Optional[Union[dict, DefaultModelConfig]]
+    model_config: Optional[ModelConfigDict]
 
     def __init__(
         self,
@@ -83,8 +91,8 @@ class DDTModule(PPOTorchRLModule):
         assert isinstance(self.model_config, dict)
 
         self.bot_name = self.model_config["bot_name"] + '_'
-        num_rules = self.model_config["num_rules"]
-        rule_list = self.model_config["rule_list"]
+        num_rules: int = self.model_config["num_rules"]
+        rule_list: bool = self.model_config["rule_list"]
         input_dim = self.observation_space.shape[0]  # type: ignore
         output_dim = int(self.action_space.n)  # type: ignore
         if rule_list:
@@ -176,7 +184,7 @@ class DDTModuleGymRunner(DDTModule, AgentBase):
         self.rewards_file = None
         self._version = None
         self._duplicate = duplicate
-        self.save_output = self.model_config["save_output"]
+        self.save_output = getattr(self, "model_config", {}).get("save_output", False)
         self.replay_buffer = SilvaReplayBuffer()
         self.reward_history = []
         self._check_version()

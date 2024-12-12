@@ -30,12 +30,13 @@ from ray.tune.logger import (  # noqa: F401
     JsonLoggerCallback,
     TBXLoggerCallback,
 )
-from tqdm import tqdm
 
 from interpretable_ddts.agents.ddt_catalog import DDTCatalog
-from interpretable_ddts.agents.ddt_ppo_module import DDTModule, DDTModuleGymRunner
+from interpretable_ddts.agents.ddt_ppo_module import DDTModule
 from interpretable_ddts.agents.ppo_learner import SilvaLearner
-from interpretable_ddts.runfiles import gym_runner
+
+if TYPE_CHECKING:
+    from tqdm import tqdm
 
 os.environ["RAY_COLOR_PREFIX"]="1"
 
@@ -295,6 +296,9 @@ if __name__ == "__main__":
 
     # note config will be passed as first positional argument
     if False:
+        from interpretable_ddts.runfiles import gym_runner
+        from interpretable_ddts.agents.ddt_ppo_module import DDTModuleGymRunner
+
         module_spec.module_class = DDTModuleGymRunner
         module_spec.model_config.update({
             "save_output": False,

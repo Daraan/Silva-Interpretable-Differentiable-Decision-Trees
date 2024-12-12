@@ -7,8 +7,10 @@ from interpretable_ddts.agents.ddt import DDT
 from interpretable_ddts.opt_helpers import replay_buffer, ppo_update
 import os
 import numpy as np
-from typing import Optional, Union
-from pathlib import Path
+from typing import TYPE_CHECKING, Optional, Union
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 def save_ddt(fn, model):
     checkpoint = {}
@@ -131,9 +133,13 @@ class DDTAgent(AgentBase):
         self.replay_buffer.insert(
             obs=[self.last_state],
             action_log_probs=self.last_action_probs,
-            value_preds=self.last_value_pred[self.last_action.item()],
+            value_preds=self.last_value_pred[
+                self.last_action.item()
+            ],  # pyright: ignore[reportArgumentType]  # item() -> Number and not int
             deeper_action_log_probs=self.last_deep_action_probs,
-            deeper_value_pred=self.last_deep_value_pred[self.last_action.item()],
+            deeper_value_pred=self.last_deep_value_pred[  # pyright: ignore[reportArgumentType, reportCallIssue]
+                self.last_action.item()
+            ],
             last_action=self.last_action.item(),
             full_probs_vector=self.full_probs,
             deeper_full_probs_vector=self.deeper_full_probs,

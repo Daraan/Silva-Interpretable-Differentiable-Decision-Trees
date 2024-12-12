@@ -1,9 +1,11 @@
 # Created by Andrew Silva on 2/21/19
 from __future__ import annotations
+import logging
 
 import numpy as np
 import torch
 import torch.nn as nn
+logger = logging.getLogger(__name__)
 
 class DDT(nn.Module):
 
@@ -227,7 +229,7 @@ class DDT(nn.Module):
         probs = probs.prod(dim=1)
         actions = probs.mm(self.action_probs)
 
-        if not self.is_value:
-            return self.softmax(actions)
-        else:
-            return actions
+        if self.is_value:
+            return actions  # Return logits
+        # Else return probabilities
+        return self.softmax(actions)

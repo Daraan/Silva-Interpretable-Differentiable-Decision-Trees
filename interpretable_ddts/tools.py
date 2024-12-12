@@ -106,7 +106,7 @@ def load_output(
     df_2 = df.reset_index().set_index([*index, "episode"])
     if isinstance(aggregate_version, (str, list, Iterable)) and "mean" in aggregate_version:
         df_2.drop(columns=["fn"], inplace=True)
-    agg_df = (
+    agg_df = (  # noqa: RET504
         df_2.groupby(list(index)).aggregate(
             aggregate_version,
         ).sort_values(aggregate_column, ascending=False)

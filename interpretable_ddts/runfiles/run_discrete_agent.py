@@ -149,10 +149,9 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
     ]
     total = len(files)
     if total == 0:
-        print("No results found in", model_path, "subdirs excluded")
+        print("No results found in", model_path, "subdirs excluded. Exiting...")
         import sys
         sys.exit(1)
-        return
     if verbose:
         print(f"Found {total} models")
     if total >= 50 and verbose == "auto":
@@ -238,10 +237,10 @@ def run_a_model(fn: str, args_in: argparse.Namespace, seed: Optional[int]=0, ver
             gym_env = gym.make("LunarLander-v2", render_mode=render_mode)
         elif env == "cart":
             gym_env = gym.make("CartPole-v1", render_mode=render_mode)
-        elif env == "FindAndDefeatZerglings":
-            pass
         else:
-            pass
+            gym_env = None
+    else:
+        gym_env = env
     final_deep_actor_fn = os.path.join(MODEL_DIR, fn) if not fn.startswith(MODEL_DIR) else fn
     final_deep_critic_fn = os.path.join(MODEL_DIR, fn) if not fn.startswith(MODEL_DIR) else fn
 
@@ -262,6 +261,8 @@ def run_a_model(fn: str, args_in: argparse.Namespace, seed: Optional[int]=0, ver
     for _ in range(num_runs):
         if env == 'FindAndDefeatZerglings':
             reward, replay_buffer = micro_episode(None, policy_agent, game_mode=env)
+        elif gym_env is None:
+            raise ValueError("Unknown environment", env)
         else:
             reward, replay_buffer = gym_episode(None, gym_env, policy_agent)
         master_states.extend(replay_buffer['states'])

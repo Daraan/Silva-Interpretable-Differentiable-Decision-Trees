@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 from functools import wraps
-from typing import Optional, TYPE_CHECKING, SupportsFloat
-from typing_extensions import Self
-
-from interpretable_ddts.opt_helpers import replay_buffer, ppo_update
 from pathlib import Path
+from typing import TYPE_CHECKING, Optional, SupportsFloat
 
 import torch
 from torch.distributions import Categorical
+from typing_extensions import Self
 
 if TYPE_CHECKING:
-    from interpretable_ddts.agents.mlp_agent import BaselineFCNet
     from interpretable_ddts.agents.ddt import DDT
+    from interpretable_ddts.agents.mlp_agent import BaselineFCNet
+    from interpretable_ddts.opt_helpers import ppo_update, replay_buffer
+
 
 class AgentBase:
 
@@ -27,7 +27,7 @@ class AgentBase:
         @wraps(func)
         def wrapper(self, *args, **kwargs):
             if not self.save_output:
-                return
+                return None
             return func(self, *args, **kwargs)
         return wrapper
 

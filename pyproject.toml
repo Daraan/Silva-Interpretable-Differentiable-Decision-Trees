@@ -21,6 +21,7 @@ line-length = 120
 
 [tool.ruff.lint]
 select = [
+  "RUF",
   "E",
   "F",
   "W",
@@ -34,15 +35,23 @@ select = [
   "C4",
   "T100",
   "FA102",
-  "ISC",
-  "ICN",
-  "LOG",
-  "G",
+  "ISC",  # Implicit String Concat
+  "ICN",  # Import Conventions
+  "LOG",  # logging
+  "G",    # Log formatting
+  "Q003", "Q004",
+  "RET",
+  # SLF   # Private member access
+  "SLOT", # Reduce memory when using __slots__
+  "TID",  # relative | slow imports
+  "TC",
 ]
 ignore = [
-  "D203",
-  
-  "D205",
+  "D203", "D205",
+  "RET504",  # assignment before return
+  "RUF100",  # Unused noqa
+  "SIM108",  # Use ternary assignments instead of if blocks
+  "SIM300",  # Yoda triggers on GYM_VERSION >= Version("1.0.0")
 ]
 exclude = [
     ".git",

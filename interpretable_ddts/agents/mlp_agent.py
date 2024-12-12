@@ -33,9 +33,9 @@ class BaselineFCNet(nn.Module):
         else:
             act_out = self.lin3(self.sig(self.lin1(input_data)))
         if self.is_value:
-            return act_out
-        else:
-            return self.softmax(act_out)
+            return act_out  # Return logits
+        # Else return probabilities
+        return self.softmax(act_out)
 
 
 class MLPAgent(AgentBase):
