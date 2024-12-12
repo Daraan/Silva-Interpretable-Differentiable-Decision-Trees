@@ -130,62 +130,28 @@ class DDTModule(PPOTorchRLModule):
         self._max_inputs = 10
 
     def encoder(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        """No encoder is used return inputs in an ActorCriticEncoder output form"""
+        """
+        No encoder is used return inputs in an ActorCriticEncoder output form
+        to be passed to the action(pi) and value(vf) networks
+        """
         return {
             ENCODER_OUT: {
                 ACTOR: inputs,
-                **({} if self.config.inference_only else {CRITIC: inputs}),
+                # Add critic from value network
+                **(
+                   {}
+                   if self.config.inference_only
+                   else {CRITIC: inputs}
+                ),
             }
         }
 
-    def _forward_train(self, batch: Dict[str, Any] | SampleBatch, **kwargs) -> Dict[str, Any]:
-        return super()._forward_train(batch, **kwargs)
-
-    def _forward_explorationX(self, batch, **kwargs):
-        with torch.no_grad():
-            obs = torch.Tensor(batch["obs"])
-            obs = obs.view(1, -1)
-            self.last_state = obs
-
-            probs = self.action_network(obs)
-            value_pred = self.value_network(obs)
-            # probs_v = probs.view(-1).cpu()  # not equivalent to squeeze if multiple ops
-            #probs = probs.squeeze(0)#.cpu()  # this flattens the array
-            if self.action_network.input_dim <= self._max_inputs:
-                # default
-                return {
-                    "action_dist_inputs": probs,
-                }
-            # sample
-            self.full_probs = probs
-            probs, inds = torch.topk(probs, 3)
-            adj_probs = torch.zeros_like(self.full_probs)
-            adj_probs[inds] = probs
-            return {
-                "action_dist_inputs": adj_probs.unsqueeze(0),
-            }
-            probs = adj_probs
-            m = Categorical(adj_probs)
-            action = m.sample()
-            log_probs = m.log_prob(action)
-            self.last_action_probs = log_probs.cpu()
-            self.last_value_pred = value_pred.view(-1).cpu()
-
-            if self.action_network.input_dim > self._max_inputs:
-                self.last_action = inds[action].cpu()
-            else:
-                self.last_action = action.cpu()
-            if self.action_network.input_dim > self._max_inputs:
-                action = inds[action]#.item()
-            #else:
-            #    action = action.item()
-            return {
-                "actions": action.unsqueeze(-1),  # actions will be used as-is (no sampling step!)
-                #    "action_dist_inputs": ...  # optional: If provided, will be used to compute action probs and logp.
-            }
-
 
 class DDTModuleGymRunner(DDTModule, AgentBase):
+    """
+    Version of the DDTModule that is used by gym_runner.py
+    it is compatible with the AgentBase interface
+    """
 
     @property
     def action_network(self):  # pyright: ignore[reportIncompatibleVariableOverride]
