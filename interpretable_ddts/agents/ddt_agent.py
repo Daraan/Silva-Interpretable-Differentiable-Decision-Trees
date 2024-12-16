@@ -48,11 +48,12 @@ def load_ddt(fn):
 
 def init_rule_list(num_rules: int, dim_in: int, dim_out: int):
     weights = np.random.rand(num_rules, dim_in)
-    leaves: list[LeafInfo] = []
     comparators = np.random.rand(num_rules, 1)
-    for leaf_index in range(num_rules):
+    leaves: list[LeafInfo] = [
         # for dim_out > 1 use tolist
-        leaves.append(([leaf_index], np.arange(0, leaf_index).tolist(), np.random.rand(dim_out).tolist()))
+        ([leaf_index], np.arange(0, leaf_index).tolist(), np.random.rand(dim_out).tolist())
+        for leaf_index in range(num_rules)
+    ]
     leaves.append(([], np.arange(0, num_rules).tolist(), np.random.rand(dim_out).tolist()))
     return weights, comparators, leaves
 

@@ -97,7 +97,7 @@ def create_ddt_config(
     USE_SILVA_LOSS = True
     config.framework("torch")
     config.training(
-        learner_class=SilvaLearner,  #
+        learner_class=SilvaLearner,
         learner_config_dict={"use_silva_loss": USE_SILVA_LOSS},
         gamma=0.99,
         use_critic=True,
@@ -237,7 +237,7 @@ if __name__ == "__main__":
         dim_out = init_env.action_space.n  # type: ignore[attr-defined]
         env = "CartPole-v1"
     else:
-        raise Exception('No valid environment selected')
+        raise ValueError(f'No valid environment {args.env_type}')
     dim_int, dim_out = int(dim_in), int(dim_out)  # might be np
 
     config, module_spec = create_ddt_config(args, env)
@@ -246,6 +246,9 @@ if __name__ == "__main__":
         """
         Args:
             index: Is a `dict` / `param_spec` if this is used by Tune.
+
+        Warning:
+            Best practice is to not refer to any objects from outer scope in the training_function
         """
         config, _ = create_ddt_config(args, env)
         algo = config.build()
@@ -386,6 +389,7 @@ if __name__ == "__main__":
     trainable_with_resources = tune.with_resources(trainable, tune.PlacementGroupFactory(
         [{'CPU': 1.0}] + [{'CPU': 1.0}] * (0 if args.not_parallel else 4),
     ))
+    # Use tune.with_parameters to pass large objects to the trainable
     tune.Tuner(
         trainable,  # Note: possibly can also be a list
         # "PPO",
@@ -393,7 +397,7 @@ if __name__ == "__main__":
         param_space=param_space,
         tune_config=tune.TuneConfig(
             num_samples=N_JOBS,
-            #metric=
+            # metric=
             #    (EVALUATION_RESULTS + "/" + ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
             #     if config.evaluation_interval else ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN),
             mode="max",

@@ -15,7 +15,7 @@ from ray.rllib.utils.deprecation import logger as _deprecation_logger
 from ray.rllib.utils.metrics import EPISODE_RETURN_MEAN
 
 from interpretable_ddts.agents._agent_interface import AgentBase
-from interpretable_ddts.agents.ddt import DDT
+from interpretable_ddts.agents.ddt import DDT, LeafInfo
 from interpretable_ddts.opt_helpers import ppo_update
 from interpretable_ddts.opt_helpers.replay_buffer import (
     ReplayBufferSingleAgent as SilvaReplayBuffer,
@@ -33,11 +33,14 @@ if TYPE_CHECKING:
 
 def init_rule_list(num_rules, dim_in, dim_out):
     weights = np.random.rand(num_rules, dim_in)
-    leaves = []
+    leaves: list[LeafInfo] = []
     comparators = np.random.rand(num_rules, 1)
-    for leaf_index in range(num_rules):
-        leaves.append([[leaf_index], np.arange(0, leaf_index).tolist(), np.random.rand(dim_out)])
-    leaves.append([[], np.arange(0, num_rules).tolist(), np.random.rand(dim_out)])
+    leaves = [
+        ([leaf_index], np.arange(0, leaf_index).tolist(), np.random.rand(dim_out).tolist())
+        for leaf_index in range(num_rules)
+    ]
+
+    leaves.append(([], np.arange(0, num_rules).tolist(), np.random.rand(dim_out).tolist()))
     return weights, comparators, leaves
 
 class ModelConfigDict(TypedDict):
@@ -57,7 +60,7 @@ class DDTModule(PPOTorchRLModule):
 
     def __init__(
         self,
-        config: RLModuleConfig=DEPRECATED_VALUE,  # type: ignore  # use -1 here to avoid errors
+        config: RLModuleConfig=DEPRECATED_VALUE,  # type: ignore[arg-type]  # use -1 here to avoid errors
         *,
         observation_space: Optional[gym.Space] = None,
         action_space: Optional[gym.Space] = None,

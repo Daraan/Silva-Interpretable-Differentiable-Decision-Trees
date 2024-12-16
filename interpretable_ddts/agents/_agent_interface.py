@@ -96,8 +96,6 @@ class AgentBase:
             self._write_hparams()
             self.rewards_file.open("a")
 
-    #
-
     def save_reward(self, reward: float | SupportsFloat):
         raise NotImplementedError
 

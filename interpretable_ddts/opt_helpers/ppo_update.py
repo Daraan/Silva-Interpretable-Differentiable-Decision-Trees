@@ -2,9 +2,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
-import torch.nn as nn
+from torch import nn
 import torch.nn.functional as F
-import torch.optim as optim
+from torch import optim
 from torch.distributions import Categorical
 
 if TYPE_CHECKING:

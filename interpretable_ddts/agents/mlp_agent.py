@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from ._agent_interface import AgentBase
 import torch
-import torch.nn as nn
+from torch import nn
 from torch.distributions import Categorical
 from interpretable_ddts.opt_helpers import replay_buffer, ppo_update
 import copy
@@ -20,8 +20,8 @@ class BaselineFCNet(nn.Module):
         self.sig = nn.ReLU()
         self.input_dim = input_dim
         modules = []
-        for _ in range(hidden_layers):
-            modules.append(nn.Linear(input_dim, input_dim))
+        modules = [nn.Linear(input_dim, input_dim) for _ in range(hidden_layers)]
+
         if len(modules) > 0:
             self.lin2 = nn.Sequential(*modules)
         self.softmax = nn.Softmax(dim=1)

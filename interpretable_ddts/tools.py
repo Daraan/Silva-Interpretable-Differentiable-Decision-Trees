@@ -86,10 +86,7 @@ def load_rewards(files: Iterable[Union[str, Path]]):
         )
         for file, header in zip(files, headers)
     )
-    data = pd.concat(objs)
-    data.sort_index(
-        inplace=True,
-    )
+    data = pd.concat(objs).sort_index()
     return data
 
 
@@ -105,7 +102,7 @@ def load_output(
         return df
     df_2 = df.reset_index().set_index([*index, "episode"])
     if isinstance(aggregate_version, (str, list, Iterable)) and "mean" in aggregate_version:
-        df_2.drop(columns=["fn"], inplace=True)
+        df_2 = df_2.drop(columns=["fn"])
     agg_df = (  # noqa: RET504
         df_2.groupby(list(index)).aggregate(
             aggregate_version,
@@ -207,7 +204,6 @@ def seed_everything(env, seed: Optional[int], *, torch_manual=False):
         )  # setting torch manual seed causes bad models, # ok seed 124
         seed, next_seed = _split_seed(next_seed)
         torch.cuda.manual_seed_all(seed)
-    #
     if env:
         if not GYM_V_0_26:  # gymnasium does not have this
             seed, next_seed = _split_seed(next_seed)
@@ -217,6 +213,9 @@ def seed_everything(env, seed: Optional[int], *, torch_manual=False):
 
     seed, next_seed = _split_seed(next_seed)
     return seed, next_seed
+
+RUN_MIN_LENGTH = 1000
+"""Amounts will lower lines are considered incomplete"""
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -230,13 +229,11 @@ if __name__ == "__main__":
         clean_files = []
         for file in rewards_dir.glob("*.txt"):
             txt = file.read_text().split("\n")
-            if len(txt) < 1000:
+            if len(txt) < RUN_MIN_LENGTH:
                 print(f"Removing {file}")
                 stem = file.stem.split("_rewards")[0]
                 models = list(model_dir.glob(f"*th{stem}*"))
-                if models:
-                    for model in models:
-                        clean_files.append(model)
+                clean_files.extend(models)
                 clean_files.append(file)
         print("Files to remove:", clean_files)
         do_clean = input("Do you want to remove these files? (y/n): ").lower()

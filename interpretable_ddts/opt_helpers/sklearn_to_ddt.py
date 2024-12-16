@@ -54,11 +54,7 @@ def ddt_init_from_dt(estimator):
 
             weight_node_map.append(i)
     for leaf in leaves:
-        new_left = []
-        new_right = []
-        for left_turn in leaf[0]:
-            new_left.append(weight_node_map.index(left_turn))
-        for right_turn in leaf[1]:
-            new_right.append(weight_node_map.index(right_turn))
+        new_left = [weight_node_map.index(left_turn) for left_turn in leaf[0]]
+        new_right = [weight_node_map.index(right_turn) for right_turn in leaf[1]]
         init_leaves.append([new_left, new_right, leaf[2]])
     return init_weights, init_comparators, init_leaves

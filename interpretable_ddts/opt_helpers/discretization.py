@@ -3,14 +3,14 @@ import numpy as np
 from interpretable_ddts.agents.ddt import DDT
 
 
-def convert_to_discrete(fuzzy_model, master_states=None):
+def convert_to_discrete(fuzzy_model: DDT, master_states=None):
     new_weights = []
     new_comps = []
 
     weights = np.abs(fuzzy_model.layers.detach().numpy())
     most_used = np.argmax(weights, axis=1)
-    for comp_ind, comparator in enumerate(fuzzy_model.comparators):
-        comparator = comparator.item()
+    for comp_ind, comparator_tensor in enumerate(fuzzy_model.comparators):
+        comparator = comparator_tensor.item()
         divisor = abs(fuzzy_model.layers[comp_ind][most_used[comp_ind]].item())
         if divisor == 0:
             divisor = 1
@@ -46,4 +46,3 @@ def convert_to_discrete(fuzzy_model, master_states=None):
         crispy_model = crispy_model.cuda()
 
     return crispy_model
-

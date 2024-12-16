@@ -75,9 +75,9 @@ for method in methods:
     for reward in rewards:
         df = pd.read_csv(reward, header=None).T
         version = int(reward.stem.split("_v")[-1].split("_")[0])
-        df.set_index(pd.MultiIndex.from_tuples([(ENV, method, version)],
-                                               names=["env", "method", "version"]),
-                     inplace=True)
+        df = df.set_index(
+            pd.MultiIndex.from_tuples([(ENV, method, version)], names=["env", "method", "version"]),
+        )
         dfs.append(df)
     method_df= pd.concat(dfs, axis=0)
     data = pd.concat([data, method_df], axis=0)
@@ -89,9 +89,9 @@ averages_grouped = avg_data.T.groupby(pd.cut(avg_data.columns, bins=1000//50, in
 errors = data_grouped.std()
 errors_grouped = errors.T.groupby(pd.cut(errors.columns, bins=1000//50, include_lowest=True)).mean()
 
-#SELECTION = range(0, 1000, 50)
-#data_sel = averages_grouped[SELECTION]
-#error_sel = errors[SELECTION].T
+# SELECTION = range(0, 1000, 50)
+# data_sel = averages_grouped[SELECTION]
+# error_sel = errors[SELECTION].T
 data_sel = averages_grouped
 error_sel = errors_grouped
 new_index = list(data_sel.index.map(lambda x: x.right))

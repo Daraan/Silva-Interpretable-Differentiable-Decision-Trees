@@ -18,7 +18,6 @@ from packaging.version import Version
 from packaging.version import parse as parse_version
 from tqdm import tqdm
 
-from interpretable_ddts.agents._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt_agent import DDTAgent
 from interpretable_ddts.agents.mlp_agent import MLPAgent
 from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
@@ -26,8 +25,9 @@ from interpretable_ddts.tools import seed_everything
 
 if TYPE_CHECKING:
     from multiprocessing.synchronize import Lock
-    from ray.rllib.core.rl_module.rl_module import RLModuleSpec  # for performance import only if used
+    from ray.rllib.core.rl_module.rl_module import RLModuleSpec  # for performance import only if used  # noqa: TC004
     from gymnasium.core import ObsType, ActType
+    from interpretable_ddts.agents._agent_interface import AgentBase
 
 
 GYM_VERSION = parse_version(gym.__version__)
@@ -39,7 +39,7 @@ GYM_V1 = GYM_VERSION >= Version("1.0.0")
 def run_episode(
     q, env: gym.Env[ObsType, ActType], agent_in: AgentBase, *, render_mode=None,
 ) -> tuple[float, dict[str, Any]]:
-    agent = agent_in.duplicate()
+    agent = agent_in.duplicate()  # NOTE: Weights are not copied
 
     # Reset without resetting the RNG generator to get an initial observation
     if GYM_V_0_26:
@@ -131,8 +131,10 @@ def main(
         use_pbar = False
     else:
         use_pbar = True
-    def is_pbar(pbar) -> TypeGuard[tqdm]:
+
+    def is_pbar(pbar) -> TypeGuard[tqdm]:  # noqa: ARG001
         return use_pbar
+
     reward = episode = running_reward = float("nan")
     for episode in pbar:
         returned_object = run_episode(
@@ -210,7 +212,7 @@ def start_process(
     i, args: argparse.Namespace, init_env: Optional[gym.Env] = None, lock: Optional[Lock]=None,
 ):
     """Wrapper of main that can be used in parallel."""
-    agent_type: str | RLModuleSpec = args.agent_type
+    agent_type: "str | RLModuleSpec" = args.agent_type
     env_type: str = args.env_type
     seed: Optional[int] = args.seed
     # Initialize with different seed
@@ -253,7 +255,7 @@ def start_process(
             policy_agent = agent_type.build()
             policy_agent.setup()
         else:
-            raise Exception("No valid network selected")
+            raise ValueError(f"No valid network selected: {agent_type}")
     use_pbar: bool | type[tqdm] = getattr(args, "use_pbar", True)
     if use_pbar:
         if isinstance(use_pbar, type):
@@ -304,7 +306,7 @@ if __name__ == "__main__":
     if args.seed == -1:
         args.seed = None
     if args.render_mode == "human" and not args.not_parallel:
-        raise Exception("Cannot use 'human' render in parallel.")
+        raise ValueError("Cannot use 'human' render in parallel.")
     SEED = args.seed
     AGENT_TYPE: str = args.agent_type  # 'ddt', 'mlp'
     NUM_EPS: int = args.episodes  # num episodes Default 1000
@@ -323,7 +325,7 @@ if __name__ == "__main__":
         dim_out = init_env.action_space.n  # type: ignore[attr-defined]
         env = "CartPole-v1"
     else:
-        raise Exception('No valid environment selected')
+        raise ValueError(f"No valid environment {ENV_TYPE}")
     args.dim_in = dim_in
     args.dim_out = dim_out
 

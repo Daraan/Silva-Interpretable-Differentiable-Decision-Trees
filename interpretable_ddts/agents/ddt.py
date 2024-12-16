@@ -5,7 +5,7 @@ from typing import Optional, Sequence, cast, TYPE_CHECKING
 
 import numpy as np
 import torch
-import torch.nn as nn
+from torch import nn
 
 if TYPE_CHECKING:
     from interpretable_ddts.agents.ddt_agent import LeafInfo

@@ -67,7 +67,7 @@ def evaluate_model(
     try:
         fda = load_ddt(final_deep_actor_fn)
     except FileNotFoundError:
-        logging.error("File not found: %s", final_deep_actor_fn)
+        logging.error("File not found: %s", final_deep_actor_fn, exc_info=False)
         return None
 
     policy_agent = DDTAgent(bot_name='crispytester',
@@ -154,7 +154,8 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
         sys.exit(1)
     if verbose:
         print(f"Found {total} models")
-    if total >= 50 and verbose == "auto":
+    _max_models_for_verbose = 50
+    if total >= _max_models_for_verbose and verbose == "auto":
         print("Turning off full verbose output for more than 500 models")
         verbose = False
     elif verbose == "auto":
@@ -165,7 +166,7 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
     ]
     filenames = [fn.relative_to(model_path).name for fn in files]
 
-    all_results_ = cast("list[Result | None]", Parallel(n_jobs=25)(delayed_functions))
+    all_results_ = cast("list[Result | None]", Parallel(n_jobs=n_jobs)(delayed_functions))
     if not all(all_results_):
         all_results: "list[Result]" = list(
             filter(None, all_results_),
@@ -179,9 +180,9 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
         (RE_PARSE_FILENAME.match(file) or RE_PARSE_FILENAME_OLD.match(file)).groupdict()
         for file in filenames
     ]
-    results_df = pd.DataFrame(all_results)
-    results_df.index = create_df_index(metadata)
-    results_df.sort_values("discrete_reward", ascending=False, inplace=True)
+    results_df_unsorted = pd.DataFrame(all_results)
+    results_df_unsorted.index = create_df_index(metadata)  # do not sort before
+    results_df = results_df_unsorted.sort_values("discrete_reward", ascending=False)
 
     best_fuzzy_arg: int = results_df.fuzzy_reward.argmax()  # type: ignore
     best_arg: int = results_df.discrete_reward.argmax()  # type: ignore
@@ -306,10 +307,11 @@ def run_a_model(fn: str, args_in: argparse.Namespace, seed: Optional[int]=0, ver
             raise ValueError(f"Unknown environment {env}")
         crispy_reward.append(crispy_out)
 
-    leaves = crispy_actor.leaf_init_information
-    for leaf_ind in range(len(leaves)):
-        leaves[leaf_ind][-1] = np.argmax(leaves[leaf_ind][-1])
     if verbose > 1:
+        # For printing select the most chosen leaf
+        leaves = crispy_actor.leaf_init_information
+        for leaf_ind in range(len(leaves)):
+            leaves[leaf_ind] = (*leaves[leaf_ind][:-1], np.argmax(leaves[leaf_ind][-1]).item())
         print(leaves)
         print(crispy_actor.comparators.detach().numpy().reshape(-1))
         ddt_weights = crispy_actor.layers.detach().numpy()
@@ -450,7 +452,7 @@ if __name__ == "__main__":
         if args.model_fn:
             models = [args.model_fn]
         elif args.all:
-            models = results_df.fn.values
+            models = results_df.fn.to_numpy()
         else:  # only best
             models = best_disc_models.values()
         # cartpole random seeds include: [11421, 12494, 12495, 12496,
