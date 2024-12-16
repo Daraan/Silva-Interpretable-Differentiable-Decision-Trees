@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Optional, Union
 
 if TYPE_CHECKING:
     from pathlib import Path
+    LeafInfo = tuple[list[int], list[int], list[float] | float]
+
 
 def save_ddt(fn, model):
     checkpoint = {}
@@ -44,13 +46,14 @@ def load_ddt(fn):
     return new_model
 
 
-def init_rule_list(num_rules, dim_in, dim_out):
+def init_rule_list(num_rules: int, dim_in: int, dim_out: int):
     weights = np.random.rand(num_rules, dim_in)
-    leaves = []
+    leaves: list[LeafInfo] = []
     comparators = np.random.rand(num_rules, 1)
     for leaf_index in range(num_rules):
-        leaves.append([[leaf_index], np.arange(0, leaf_index).tolist(), np.random.rand(dim_out)])
-    leaves.append([[], np.arange(0, num_rules).tolist(), np.random.rand(dim_out)])
+        # for dim_out > 1 use tolist
+        leaves.append(([leaf_index], np.arange(0, leaf_index).tolist(), np.random.rand(dim_out).tolist()))
+    leaves.append(([], np.arange(0, num_rules).tolist(), np.random.rand(dim_out).tolist()))
     return weights, comparators, leaves
 
 
