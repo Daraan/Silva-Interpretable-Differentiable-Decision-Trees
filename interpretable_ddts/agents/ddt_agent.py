@@ -1,7 +1,6 @@
 # Created by Andrew Silva on 8/28/19
 from __future__ import annotations
-import contextlib
-from pickle import UnpicklingError
+import logging
 
 import torch
 from ._agent_interface import AgentBase
@@ -60,8 +59,12 @@ def safe_globals():
 
 
 def load_ddt(fn):
-    with safe_globals():
-        model_checkpoint = torch.load(fn, map_location='cpu', weights_only=True)
+    try:
+        with safe_globals():
+            model_checkpoint = torch.load(fn, map_location='cpu', weights_only=True)
+    except RuntimeError:
+        logging.error("Exception with file %s", fn)
+        raise
     model_data = model_checkpoint['model_data']
     init_weights = np.array([weight.detach().clone().data.cpu().numpy() for weight in model_data['weights']])
     init_comparators = np.array([comp.detach().clone().data.cpu().numpy() for comp in model_data['comparators']])

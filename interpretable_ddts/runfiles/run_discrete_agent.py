@@ -5,7 +5,7 @@ from datetime import datetime
 import re
 import logging
 from pathlib import Path
-from typing import Iterable, NamedTuple, Optional, Sequence, TypedDict, cast, overload
+from typing import Optional, Sequence, TypedDict, cast, overload
 from typing_extensions import Literal, NotRequired
 from joblib import Parallel, delayed
 import pandas as pd
@@ -24,9 +24,9 @@ import matplotlib.pyplot as plt
 try:
     from interpretable_ddts.runfiles.sc2_minigame_runner import run_episode as sc_episode
 except ModuleNotFoundError as e:
-    logging.warning("Cannot import Starcraft due to %s", e)
+    logging.error("Cannot import Starcraft due to %s", e)
 from interpretable_ddts.runfiles.gym_runner import run_episode as gym_episode
-from interpretable_ddts.tools import RE_PARSE_FILENAME_OLD, create_df_index, match_filename
+from interpretable_ddts.tools import RE_PARSE_FILENAME_OLD, create_df_index, match_filename, seed_everything
 
 RE_PARSE_FILENAME = re.compile(
     r"(?P<parent_dir>.+?/)?"
@@ -95,7 +95,7 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
         print(f"Found {total} models")
     _max_models_for_verbose = 50
     if total >= _max_models_for_verbose and verbose == "auto":
-        print("Turning off full verbose output for more than 500 models")
+        print(f"Turning off full verbose output for more than {_max_models_for_verbose} models")
         verbose = False
     elif verbose == "auto":
         verbose = True
@@ -110,8 +110,10 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
         for i, fn in enumerate(files, 1)
     ]
     filenames = [fn.relative_to(model_path).name for fn in files]
-
-    all_results_ = cast("list[ResultDict | None]", Parallel(n_jobs=n_jobs)(delayed_functions))
+    if n_jobs > 1:
+        all_results_ = cast("list[ResultDict | None]", Parallel(n_jobs=n_jobs)(delayed_functions))
+    else:
+        all_results_ = [foo[0](*foo[1], **foo[2]) for foo in delayed_functions]
     if not all(all_results_):
         all_results: "list[ResultDict]" = list(
             filter(None, all_results_),
@@ -175,6 +177,19 @@ def best_model_from_data(results: pd.DataFrame) -> tuple[str, str, float, float,
         max_std,
     )  # pyright: ignore[reportReturnType]
 
+@overload
+def evaluate_model(
+    fn: str,
+    *,
+    env: Optional[str | gym.Env] = None,
+    seed: Optional[int] = 0,
+    verbose: int = 1,
+    render_mode=None,
+    run_discrete: Literal[True] = True,
+    classic_decision_tree=False,
+    parallel_count: Optional[tuple[int, int]] = None,
+) -> ResultDict: ...
+
 
 @overload
 def evaluate_model(
@@ -190,25 +205,11 @@ def evaluate_model(
 ) -> float: ...
 
 
-@overload
 def evaluate_model(
     fn: str,
     *,
     env: Optional[str | gym.Env] = None,
-    seed: Optional[int] = 0,
-    verbose: int = 1,
-    render_mode=None,
-    run_discrete: Literal[True] = True,
-    classic_decision_tree=False,
-    parallel_count: Optional[tuple[int, int]] = None,
-) -> ResultDict: ...
-
-
-def evaluate_model(
-    fn: str,
-    *,
-    env: Optional[str | gym.Env] = None,
-    seed: Optional[int] = 0,
+    seed: Optional[int] = None,
     verbose: int = 1,
     render_mode=None,
     run_discrete=True,
@@ -229,9 +230,10 @@ def evaluate_model(
     gym_env = create_gym_env(env, render_mode=render_mode)
     if gym_env and seed is not None:
         gym_env.reset(seed=seed)  # NOTE: The observation from this reset is not used.
+        seed_everything(env=None, seed=seed, torch_manual=True)  # needed here to be reproducible
 
     policy_agent = load_agent(fn, bot_name="crispytester")
-    policy_agent.action_network = policy_agent.value_network  # XXX: Original setup; wrong?
+    policy_agent.value_network = policy_agent.action_network  # XXX: Original setup; wrong; unused?
 
     master_states = []
     master_actions = []
@@ -283,6 +285,9 @@ def evaluate_model(
 
         policy_agent.action_network = crispy_actor
         crispy_reward = []
+        if gym_env and seed is not None:
+            gym_env.reset(seed=seed)  # NOTE: The observation from this reset is not used.
+            seed_everything(env=None, seed=seed, torch_manual=True)
         for _ in range(num_runs):
             if env == "FindAndDefeatZerglings":
                 try:
@@ -320,7 +325,7 @@ def evaluate_model(
         print(msg)
     elif parallel_count is not None:
         # not a precise but estimated progress count
-        print(f"{'~'+str(parallel_count[0]):>7}/{parallel_count[1]}", end="\r", flush=True)
+        print(f"{'~'+str(parallel_count[0]):>9}/{parallel_count[1]}", end="\r", flush=True)
     else:
         print(".", end="", flush=True)
     if run_discrete and crispy_reward is not None:
@@ -352,7 +357,7 @@ def test_model(
         print("\n------------------\nTesting", discrete_fn)
     elif count is not None:
         # not a precise but estimated progress count
-        print(f"{'~'+str(count[0]):>7}/{count[1]}", end="\r", flush=True)
+        print(f"{'~'+str(count[0]):>9}/{count[1]}", end="\r", flush=True)
     else:
         print(".", end="", flush=True)
     filename = discrete_fn.name if isinstance(discrete_fn, Path) else discrete_fn
@@ -393,8 +398,17 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--discretize", help="train sklearn tree or discretize ddt?", action='store_true')
     parser.add_argument("-env", "--env_type", help="FindAndDefeatZerglings, cart, or lunar", type=str, default="cart")
     parser.add_argument("-m", "--model_dir", help="where are models stored?", default="../models", type=str)
-    parser.add_argument('-f', '--find_model', help="find the best models?", action="store_true")
-    parser.add_argument('-r', '--run_model', help="run a model?", action="store_true")
+    parser.add_argument(
+        "-f", "--find_model", nargs="?", const="DEFAULT", help="find the best models?",
+    )
+    parser.add_argument(
+        "--csv",
+        help="If not using find_model which csv to use",
+        type=str,
+        required=False,
+        default="DEFAULT",
+    )
+    parser.add_argument("-r", "--run_model", help="run a model?", action="store_true")
     parser.add_argument('-n', '--model_fn', help="model filename for running", type=str, default="")
     parser.add_argument(
         "-s", "--seed", help="Seed; use -1 for None", type=int, default=12496,
@@ -431,7 +445,11 @@ if __name__ == "__main__":
     # args.discretize = True
 
     if args.find_model:
-        print("\nFinding model...")
+        if args.find_model == "DEFAULT":
+            outfile = f"../outputs/results_{envir}_{datetime.now():%Y-%m-%d %H:%M}.csv"
+        else:
+            outfile = f"../outputs/results_{envir}_{args.find_model}.csv"
+        print("\nFinding model... storing results in", outfile if not args.test else "test_discrete.csv")
         *_, results_df = search_for_good_model(
             envir,
             n_jobs=N_JOBS,
@@ -439,11 +457,22 @@ if __name__ == "__main__":
         )
         Path("../outputs").mkdir(exist_ok=True)
         if not args.test:
-            results_df.to_csv(f"../outputs/results_{envir}.csv")
+            results_df.to_csv(outfile)
+        else:
+            results_df.to_csv("test_discrete.csv")
     else:
-        # reuse saved data
-        results_df = pd.read_csv(f"../outputs/results_{envir}.csv").set_index(
-            ["env", "method", "sub-method", "capacity", "GPU", "version", "episode"], drop=True,
+        if args.csv == "DEFAULT":
+            # reuse saved data
+            outfile = f"../outputs/results_{envir}.csv"
+            logging.warning("Loading data from unspecific csv: %s", outfile)
+        else:
+            outfile = f"../outputs/{args.csv}"
+        if args.test:
+            outfile = "test_discrete.csv"
+        print("\nLoading stored data from", outfile)
+        results_df = pd.read_csv(outfile).set_index(
+            ["env", "method", "sub-method", "capacity", "GPU", "version", "episode"],
+            drop=True,
         )
     # Query df which is the best model
     best_disc_models = {}
@@ -494,14 +523,14 @@ if __name__ == "__main__":
             results = cast(list[tuple[tuple[str, str, str, int, bool, int, int], ResultDict]], results)
             print("\n")
         else:
-            results = [test_model(discrete_fn) for discrete_fn in models]
+            results = [test_model(discrete_fn, seed=SEED) for discrete_fn in models]
         for index, result in results:
             results_df.loc[index, "test_diff_reward"] = round(result["fuzzy_reward"], 3)
             results_df.loc[index, "test_disc_reward"] = round(result["discrete_reward"], 3)
             results_df.loc[index, "test_disc_std"] = round(result["discrete_reward_std"], 3)
             best_results.append(index)
         if not args.test:
-            results_df.to_csv(f"../outputs/results_{envir}_{datetime.now():%Y-%m-%d %H:%M}.csv")
+            results_df.to_csv(outfile)
         else:
             results_df.to_csv("../test_discrete.csv")
         if args.all:
