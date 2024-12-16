@@ -40,6 +40,7 @@ class DDT(nn.Module):
         :param use_gpu: is this a GPU-enabled network? Default: False
         """
         self.use_gpu = use_gpu
+        self._depth: int
         if isinstance(leaves, int):
             if hasattr(int, "bit_count"):
                 _power_of_two = leaves.bit_count() == 1
@@ -50,11 +51,11 @@ class DDT(nn.Module):
             self._depth = int(np.floor(np.log2(leaves)))
         else:
             # With rule_list or duplication
-            logger.warning(
-                "Unexpected leaf information type %s; using depth=4. NOTE: the value should not be passed",
-                type(leaves),
-            )
-            self._depth = 4
+            #logger.warning(
+            #    "Unexpected leaf information type %s; using depth=4. NOTE: the value should not be passed",
+            #    type(leaves),
+            #)
+            #self._depth = None  # should not be used
             assert weights is not None
             assert comparators is not None
             assert isinstance(leaves, list)

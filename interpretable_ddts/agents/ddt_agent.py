@@ -1,5 +1,7 @@
 # Created by Andrew Silva on 8/28/19
 from __future__ import annotations
+import contextlib
+from pickle import UnpicklingError
 
 import torch
 from ._agent_interface import AgentBase
@@ -9,12 +11,14 @@ import os
 import numpy as np
 from typing import TYPE_CHECKING, Optional, Union
 
+from packaging import version
+
 if TYPE_CHECKING:
     from pathlib import Path
     LeafInfo = tuple[list[int], list[int], list[float] | float]
 
 
-def save_ddt(fn, model):
+def save_ddt(fn, model: DDT):
     checkpoint = {}
     mdl_data = {
         'weights': model.layers,
@@ -28,12 +32,39 @@ def save_ddt(fn, model):
     checkpoint['model_data'] = mdl_data
     torch.save(checkpoint, fn)
 
+def safe_globals():
+    # From: https://github.com/innovationcore/transformers/blob/main/src/transformers/trainer.py
+    # Starting from version 2.4 PyTorch introduces a check for the objects loaded
+    # with torch.load(weights_only=True). Starting from 2.6 weights_only=True becomes
+    # a default and requires allowlisting of objects being loaded.
+    # See: https://github.com/pytorch/pytorch/pull/137602
+    # See: https://pytorch.org/docs/stable/notes/serialization.html#torch.serialization.add_safe_globals
+    # See: https://github.com/huggingface/accelerate/pull/3036
+
+    # NOTE: This is not sufficient when loading an older numpy version that uses numpy.core instead of _core
+    np_core = np._core if version.parse(np.__version__) >= version.parse("2.0.0") else np.core  # pyright: ignore[reportAttributeAccessIssue]
+
+    allowlist = [np_core.multiarray._reconstruct, np.ndarray, np.dtype]
+    if version.parse(np.__version__) >= version.parse("2.0.0"):
+        # compat when loading numpy 1
+        def _reconstruct(*args, **kwargs):
+            return np_core.multiarray._reconstruct(*args, **kwargs)
+        _reconstruct.__module__ = "numpy.core.multiarray"
+        allowlist.append(_reconstruct)
+    # numpy >1.25 defines numpy.dtypes.UInt32DType, but below works for
+    # all versions of numpy
+    allowlist += [type(np.dtype(np.uint32))]
+    allowlist += [type(np.dtype(np.float64))]
+
+    return torch.serialization.safe_globals(allowlist)
+
 
 def load_ddt(fn):
-    model_checkpoint = torch.load(fn, map_location='cpu')
+    with safe_globals():
+        model_checkpoint = torch.load(fn, map_location='cpu', weights_only=True)
     model_data = model_checkpoint['model_data']
-    init_weights = [weight.detach().clone().data.cpu().numpy() for weight in model_data['weights']]
-    init_comparators = [comp.detach().clone().data.cpu().numpy() for comp in model_data['comparators']]
+    init_weights = np.array([weight.detach().clone().data.cpu().numpy() for weight in model_data['weights']])
+    init_comparators = np.array([comp.detach().clone().data.cpu().numpy() for comp in model_data['comparators']])
 
     new_model = DDT(input_dim=model_data['input_dim'],
                     weights=init_weights,

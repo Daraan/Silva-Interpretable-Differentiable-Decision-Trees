@@ -144,3 +144,5 @@ prometheus-3.0.1.linux-amd64/
 # grafana
 interpretable_ddts/runfiles/data/
 interpretable_ddts/runfiles/start_grafana.sh
+
+interpretable_ddts/test_discrete.csv
