@@ -150,6 +150,7 @@ class DDT(nn.Module):
         if isinstance(self._unprocessed_leaf_info, list):
             # Probabilities for each leaf
             new_leaves = [leaf[-1] for leaf in self._unprocessed_leaf_info]
+            self.leaf_init_information = self._unprocessed_leaf_info
         else:
             new_leaves: list[float | list[float]] = []
 

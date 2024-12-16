@@ -1,11 +1,12 @@
 # Created by Andrew Silva on 5/10/19
 from __future__ import annotations
 
+from datetime import datetime
 import re
 import logging
 from pathlib import Path
-from typing import NamedTuple, Optional, cast, overload
-from typing_extensions import Literal
+from typing import Iterable, NamedTuple, Optional, Sequence, TypedDict, cast, overload
+from typing_extensions import Literal, NotRequired
 from joblib import Parallel, delayed
 import pandas as pd
 import torch
@@ -14,13 +15,16 @@ import os
 import gymnasium as gym
 
 from interpretable_ddts.opt_helpers.discretization import convert_to_discrete
-from interpretable_ddts.agents.ddt_agent import load_ddt, DDTAgent
+from interpretable_ddts.agents.ddt_agent import DDTAgent
 from interpretable_ddts.agents.ddt import DDT
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.tree import plot_tree
 from interpretable_ddts.opt_helpers.sklearn_to_ddt import ddt_init_from_dt
 import matplotlib.pyplot as plt
-from interpretable_ddts.runfiles.sc2_minigame_runner import run_episode as sc_episode
+try:
+    from interpretable_ddts.runfiles.sc2_minigame_runner import run_episode as sc_episode
+except ModuleNotFoundError as e:
+    logging.warning("Cannot import Starcraft due to %s", e)
 from interpretable_ddts.runfiles.gym_runner import run_episode as gym_episode
 from interpretable_ddts.tools import RE_PARSE_FILENAME_OLD, create_df_index, match_filename
 
@@ -34,12 +38,14 @@ RE_PARSE_FILENAME = re.compile(
     r"_v(?P<version>\d+)",
 )
 
-class Result(NamedTuple):
+class ResultDict(TypedDict):
     fn : str
     fuzzy_reward : float      # np.mean(reward_after_five)
     fuzzy_reward_std : float  # np.std(reward_after_five),
     discrete_reward : float     # np.mean(crispy_reward)
     discrete_reward_std: float  # np.std(crispy_reward)
+    discrete_model: NotRequired[DDTAgent]
+
 
 def create_gym_env(env: str | gym.Env, *, render_mode=None):
     if not isinstance(env, gym.Env):
@@ -105,20 +111,25 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
     ]
     filenames = [fn.relative_to(model_path).name for fn in files]
 
-    all_results_ = cast("list[Result | None]", Parallel(n_jobs=n_jobs)(delayed_functions))
+    all_results_ = cast("list[ResultDict | None]", Parallel(n_jobs=n_jobs)(delayed_functions))
     if not all(all_results_):
-        all_results: "list[Result]" = list(
+        all_results: "list[ResultDict]" = list(
             filter(None, all_results_),
         )  # filter potential FileNotFound
         filenames = [fn for fn, res in zip(filenames, all_results_) if res]
     else:
-        all_results = cast("list[Result]", all_results_)
+        all_results = cast("list[ResultDict]", all_results_)
     if not verbose:
         print("\n")
-    metadata = [
-        (RE_PARSE_FILENAME.match(file) or RE_PARSE_FILENAME_OLD.match(file)).groupdict()
-        for file in filenames
+    parsed_filenames = [
+        (RE_PARSE_FILENAME.match(file) or RE_PARSE_FILENAME_OLD.match(file)) for file in filenames
     ]
+    if not all(parsed_filenames):
+        unparsable_names = [filename for filename, m in zip(filenames, parsed_filenames) if m is None]
+        logging.error("Cannot parse filenames: %s", ", ".join(unparsable_names))
+        all_results = [result for result, m in zip(all_results, parsed_filenames) if m]
+    parsed_filenames = filter(None, parsed_filenames)
+    metadata = [file.groupdict() for file in parsed_filenames]
     results_df_unsorted = pd.DataFrame(all_results)
     results_df_unsorted.index = create_df_index(metadata)  # do not sort before
     results_df = results_df_unsorted.sort_values("discrete_reward", ascending=False)
@@ -126,12 +137,13 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
     best_fuzzy_arg: int = results_df.fuzzy_reward.argmax()  # type: ignore
     best_arg: int = results_df.discrete_reward.argmax()  # type: ignore
 
-    max_fuzzy_reward = all_results[best_fuzzy_arg].fuzzy_reward
-    max_fuzzy_std = all_results[best_fuzzy_arg].fuzzy_reward_std
-    best_fuzzy_fn = all_results[best_fuzzy_arg].fn
-    max_reward = all_results[best_arg].discrete_reward
-    max_std = all_results[best_arg].discrete_reward_std
-    best_fn = all_results[best_arg].fn
+    max_fuzzy_reward = all_results[best_fuzzy_arg]["fuzzy_reward"]
+    max_fuzzy_std = all_results[best_fuzzy_arg]["fuzzy_reward_std"]
+    best_fuzzy_fn = all_results[best_fuzzy_arg]["fn"]
+    max_reward = all_results[best_arg]["discrete_reward"]
+    max_std = all_results[best_arg]["discrete_reward_std"]
+    best_fn = all_results[best_arg]["fn"]
+    best_discrete_model = all_results[best_arg].get("discrete_model")
 
     return (
         best_fuzzy_fn,
@@ -140,10 +152,11 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
         max_fuzzy_std,
         max_reward,
         max_std,
-        results_df,
+        best_discrete_model,
+        results_df,  # This should be last!
     )
 
-def best_model_from_data(results: pd.DataFrame):
+def best_model_from_data(results: pd.DataFrame) -> tuple[str, str, float, float, float, float]:
     best_fuzzy_arg = results.fuzzy_reward.idxmax()
     best_arg = results.discrete_reward.idxmax()
 
@@ -160,7 +173,7 @@ def best_model_from_data(results: pd.DataFrame):
         max_fuzzy_std,
         max_reward,
         max_std,
-    )
+    )  # pyright: ignore[reportReturnType]
 
 
 @overload
@@ -188,7 +201,7 @@ def evaluate_model(
     run_discrete: Literal[True] = True,
     classic_decision_tree=False,
     parallel_count: Optional[tuple[int, int]] = None,
-) -> Result: ...
+) -> ResultDict: ...
 
 
 def evaluate_model(
@@ -201,7 +214,7 @@ def evaluate_model(
     run_discrete=True,
     classic_decision_tree=False,
     parallel_count: Optional[tuple[int, int]] = None,
-) -> Result | float:
+) -> ResultDict | float:
     num_runs = 15
     if env is None:
         if 'cart' in fn:
@@ -226,7 +239,7 @@ def evaluate_model(
     for _ in range(num_runs):
         if env == "FindAndDefeatZerglings":
             try:
-                reward, replay_buffer = sc_episode(None, policy_agent, game_mode="FindAndDefeatZerglings")
+                reward, replay_buffer = sc_episode(None, policy_agent, game_mode="FindAndDefeatZerglings")  # type: ignore[unbound]
             except (KeyboardInterrupt, SystemExit):
                 raise
             except Exception:
@@ -273,7 +286,7 @@ def evaluate_model(
         for _ in range(num_runs):
             if env == "FindAndDefeatZerglings":
                 try:
-                    crispy_out, replay_buffer = sc_episode(None, policy_agent, env)
+                    crispy_out, replay_buffer = sc_episode(None, policy_agent, "FindAndDefeatZerglings")  # type: ignore[unbound]
                 except (KeyboardInterrupt, SystemExit):
                     raise
                 except Exception:
@@ -311,13 +324,14 @@ def evaluate_model(
     else:
         print(".", end="", flush=True)
     if run_discrete and crispy_reward is not None:
-        return Result(
-                str(fn),
-                mean_reward_after_five,
-                np.std(rewards_after_five).item(),
-                np.mean(crispy_reward).item(),
-                np.std(crispy_reward).item(),
-            )
+        return ResultDict(
+            fn=str(fn),
+            fuzzy_reward=mean_reward_after_five,
+            fuzzy_reward_std=np.std(rewards_after_five).item(),
+            discrete_reward=np.mean(crispy_reward).item(),
+            discrete_reward_std=np.std(crispy_reward).item(),
+            discrete_model=policy_agent,
+        )
     return mean_reward_after_five
 
 
@@ -327,7 +341,11 @@ def fc_state_dict(fn=''):
 
 
 def test_model(
-    discrete_fn: Path | str, *, seed=None, verbose: int = True, count: Optional[tuple[int, int]] = None,
+    discrete_fn: Path | str,
+    *,
+    seed: Optional[int] = None,
+    verbose: int = True,
+    count: Optional[tuple[int, int]] = None,
 ):
     """Allows parallel execution of run_a_model"""
     if verbose:
@@ -404,11 +422,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.seed == -1:
         args.seed = None
-    SEED = args.seed
+    SEED: Optional[int] = args.seed
     N_JOBS = args.n_jobs
 
     envir = args.env_type
-    MODEL_DIR = args.model_dir
+    MODEL_DIR: str = args.model_dir
     # args.run_model = True
     # args.discretize = True
 
@@ -460,6 +478,7 @@ if __name__ == "__main__":
             models = results_df.fn.to_numpy()
         else:  # only best
             models = best_disc_models.values()
+        models = cast(Sequence[str], models)
         # cartpole random seeds include: [11421, 12494, 12495, 12496,
         # 30867, 30868, 30869, 30870, 30871, 30872, 34662, 38979, 38980, 45603, 45604, 45605, 45606, 46760, 46761,
         # 50266, 50267, 54857, 65926, 70614, 79986, 79987, 79988, 79989]
@@ -471,17 +490,20 @@ if __name__ == "__main__":
                 for i, discrete_fn in enumerate(models, 1)
             ]
             results = Parallel(n_jobs=25)(eval_functions)
+            # Assume Parallel return_as="list"
+            results = cast(list[tuple[tuple[str, str, str, int, bool, int, int], ResultDict]], results)
             print("\n")
         else:
             results = [test_model(discrete_fn) for discrete_fn in models]
         for index, result in results:
-            (_, avg_reward_diff, _, avg_reward_discrete, std_reward_discrete) = result
-            results_df.loc[index, "test_diff_reward"] = round(avg_reward_diff, 3)
-            results_df.loc[index, "test_disc_reward"] = round(avg_reward_discrete, 3)
-            results_df.loc[index, "test_disc_std"] = round(std_reward_discrete, 3)
+            results_df.loc[index, "test_diff_reward"] = round(result["fuzzy_reward"], 3)
+            results_df.loc[index, "test_disc_reward"] = round(result["discrete_reward"], 3)
+            results_df.loc[index, "test_disc_std"] = round(result["discrete_reward_std"], 3)
             best_results.append(index)
         if not args.test:
-            results_df.to_csv(f"../outputs/results_{envir}.csv")
+            results_df.to_csv(f"../outputs/results_{envir}_{datetime.now():%Y-%m-%d %H:%M}.csv")
+        else:
+            results_df.to_csv("../test_discrete.csv")
         if args.all:
             print(
                 "\nAll results:\n",
