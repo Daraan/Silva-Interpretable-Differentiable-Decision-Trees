@@ -3,7 +3,7 @@ import numpy as np
 from interpretable_ddts.agents.ddt import DDT
 
 
-def convert_to_discrete(fuzzy_model: DDT, master_states=None):
+def convert_to_discrete(fuzzy_model: "DDT", master_states=None):
     new_weights = []
     new_comps = []
 

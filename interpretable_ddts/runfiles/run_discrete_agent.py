@@ -4,7 +4,8 @@ from __future__ import annotations
 import re
 import logging
 from pathlib import Path
-from typing import NamedTuple, Optional, cast
+from typing import NamedTuple, Optional, cast, overload
+from typing_extensions import Literal
 from joblib import Parallel, delayed
 import pandas as pd
 import torch
@@ -19,7 +20,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.tree import plot_tree
 from interpretable_ddts.opt_helpers.sklearn_to_ddt import ddt_init_from_dt
 import matplotlib.pyplot as plt
-from interpretable_ddts.runfiles.sc2_minigame_runner import run_episode as micro_episode
+from interpretable_ddts.runfiles.sc2_minigame_runner import run_episode as sc_episode
 from interpretable_ddts.runfiles.gym_runner import run_episode as gym_episode
 from interpretable_ddts.tools import RE_PARSE_FILENAME_OLD, create_df_index, match_filename
 
@@ -40,97 +41,29 @@ class Result(NamedTuple):
     discrete_reward : float     # np.mean(crispy_reward)
     discrete_reward_std: float  # np.std(crispy_reward)
 
-
-def evaluate_model(
-    fn: str | Path,
-    env: str | gym.Env,
-    verbose: bool | int = 1,
-    count: Optional[tuple[int, int]] = None,
-    *,
-    render_mode=None,
-) -> Result | None:
-    num_runs = 15
-
+def create_gym_env(env: str | gym.Env, *, render_mode=None):
     if not isinstance(env, gym.Env):
         if env == "lunar":
             gym_env = gym.make("LunarLander-v2", render_mode=render_mode)
         elif env == "cart":
             gym_env = gym.make("CartPole-v1", render_mode=render_mode)
         elif env == "FindAndDefeatZerglings":
-            pass
+            return None
         else:
             gym_env = gym.make(env, render_mode=render_mode)
     else:
         gym_env = env
+    return gym_env
 
-    final_deep_actor_fn = os.path.join(MODEL_DIR, fn)
-    try:
-        fda = load_ddt(final_deep_actor_fn)
-    except FileNotFoundError:
-        logging.error("File not found: %s", final_deep_actor_fn, exc_info=False)
-        return None
 
-    policy_agent = DDTAgent(bot_name='crispytester',
-                            input_dim=37,
-                            output_dim=10)
-
-    policy_agent.action_network = fda
-    policy_agent.value_network = fda
-    reward_after_five = []
-    master_states = []
-    for _ in range(15):
-        if env == "FindAndDefeatZerglings":
-            try:
-                reward, replay_buffer = micro_episode(None, policy_agent, game_mode="FindAndDefeatZerglings")
-            except (KeyboardInterrupt, SystemExit):
-                raise
-            except Exception:
-                logging.exception("Error in micro_episode")
-                continue
-        else:
-            reward, replay_buffer = gym_episode(None, gym_env, policy_agent, render_mode=render_mode)
-        master_states.extend(replay_buffer["states"])
-        reward_after_five.append(reward)
-
-    # discrete
-    crispy_actor = convert_to_discrete(policy_agent.action_network, master_states)
-    policy_agent.action_network = crispy_actor
-
-    crispy_reward = []
-    for _ in range(num_runs):
-        if env == "FindAndDefeatZerglings":
-            try:
-                crispy_out, replay_buffer = micro_episode(None, policy_agent, env)
-            except (KeyboardInterrupt, SystemExit):
-                raise
-            except Exception:
-                logging.exception("Error in micro_episode")
-                crispy_out = -3
-                continue
-        elif env in ['cart', 'lunar']:
-            crispy_out, replay_buffer = gym_episode(None, gym_env, policy_agent)
-        else:
-            raise ValueError(f"Unknown environment {env}")
-
-        crispy_reward.append(crispy_out)
-    if verbose:
-        print(f"FN = {fn}\n"
-            f"Average reward after 5 runs is {np.mean(reward_after_five):.3f}\n"
-            f"Average reward for the crispy network after {num_runs} runs is {np.mean(crispy_reward):.3f}\n",
-        )
-    elif count is not None:
-        # not a precise but estimated progress count
-        print(f"{'~'+str(count[0]):>7}/{count[1]}", end="\r", flush=True)
-    else:
-        print(".", end="", flush=True)
-    return Result(
-        str(fn),
-        np.mean(reward_after_five).item(),
-        np.std(reward_after_five).item(),
-        np.mean(crispy_reward).item(),
-        np.std(crispy_reward).item(),
-    )
-
+def load_agent(fn: str | Path, bot_name="crispytester"):
+    final_deep_actor_fn = os.path.join(MODEL_DIR, fn) if not str(fn).startswith(MODEL_DIR) else fn
+    policy_agent = DDTAgent(bot_name=bot_name,
+                        # Dimensions do not matter as network is replaced
+                        input_dim=2,
+                        output_dim=2)
+    policy_agent.load(final_deep_actor_fn, auto_naming=False)
+    return policy_agent
 
 def search_for_good_model(env, n_jobs=5, verbose=1):
     # Be sure to comment out gym_runner.gym_episode env.render
@@ -161,7 +94,13 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
     elif verbose == "auto":
         verbose = True
     delayed_functions = [
-        delayed(evaluate_model)(fn.relative_to(model_path), env, verbose=verbose, count=(i, total))
+        delayed(evaluate_model)(
+            fn.relative_to(model_path),
+            env=env,
+            verbose=verbose,
+            parallel_count=(i, total),
+            run_discrete=True,
+        )
         for i, fn in enumerate(files, 1)
     ]
     filenames = [fn.relative_to(model_path).name for fn in files]
@@ -205,8 +144,8 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
     )
 
 def best_model_from_data(results: pd.DataFrame):
-    best_fuzzy_arg = results.fuzzy_reward.idxmax()  # type: ignore
-    best_arg = results.discrete_reward.idxmax()  # type: ignore
+    best_fuzzy_arg = results.fuzzy_reward.idxmax()
+    best_arg = results.discrete_reward.idxmax()
 
     max_fuzzy_reward = results.loc[best_fuzzy_arg].fuzzy_reward
     max_fuzzy_std = results.loc[best_fuzzy_arg].fuzzy_reward_std
@@ -223,106 +162,163 @@ def best_model_from_data(results: pd.DataFrame):
         max_std,
     )
 
-def run_a_model(fn: str, args_in: argparse.Namespace, seed: Optional[int]=0, verbose:int=1, *, render_mode=None):
+
+@overload
+def evaluate_model(
+    fn: str,
+    *,
+    env: Optional[str | gym.Env] = None,
+    seed: Optional[int] = 0,
+    verbose: int = 1,
+    render_mode=None,
+    run_discrete: Literal[False],
+    classic_decision_tree=False,
+    parallel_count: Optional[tuple[int, int]] = None,
+) -> float: ...
+
+
+@overload
+def evaluate_model(
+    fn: str,
+    *,
+    env: Optional[str | gym.Env] = None,
+    seed: Optional[int] = 0,
+    verbose: int = 1,
+    render_mode=None,
+    run_discrete: Literal[True] = True,
+    classic_decision_tree=False,
+    parallel_count: Optional[tuple[int, int]] = None,
+) -> Result: ...
+
+
+def evaluate_model(
+    fn: str,
+    *,
+    env: Optional[str | gym.Env] = None,
+    seed: Optional[int] = 0,
+    verbose: int = 1,
+    render_mode=None,
+    run_discrete=True,
+    classic_decision_tree=False,
+    parallel_count: Optional[tuple[int, int]] = None,
+) -> Result | float:
     num_runs = 15
-    if 'cart' in fn:
-        env = 'cart'
-    elif 'lunar' in fn:
-        env = 'lunar'
-    elif 'FindAndDefeatZerglings' in fn:
-        env = 'FindAndDefeatZerglings'
-    else:
-        raise ValueError(f"Unknown environment used in {fn}")
-    if not isinstance(env, gym.Env):
-        if env == "lunar":
-            gym_env = gym.make("LunarLander-v2", render_mode=render_mode)
-        elif env == "cart":
-            gym_env = gym.make("CartPole-v1", render_mode=render_mode)
+    if env is None:
+        if 'cart' in fn:
+            env = 'cart'
+        elif 'lunar' in fn:
+            env = 'lunar'
+        elif 'FindAndDefeatZerglings' in fn:
+            env = 'FindAndDefeatZerglings'
         else:
-            gym_env = None
-    else:
-        gym_env = env
-    final_deep_actor_fn = os.path.join(MODEL_DIR, fn) if not fn.startswith(MODEL_DIR) else fn
-    final_deep_critic_fn = os.path.join(MODEL_DIR, fn) if not fn.startswith(MODEL_DIR) else fn
+            raise ValueError(f"Unknown environment used in {fn}")
 
-    fda = load_ddt(final_deep_actor_fn)
-    fdc = load_ddt(final_deep_critic_fn)
+    gym_env = create_gym_env(env, render_mode=render_mode)
+    if gym_env and seed is not None:
+        gym_env.reset(seed=seed)  # NOTE: The observation from this reset is not used.
 
-    policy_agent = DDTAgent(bot_name='crispytester',
-                            input_dim=37,
-                            output_dim=10)
+    policy_agent = load_agent(fn, bot_name="crispytester")
+    policy_agent.action_network = policy_agent.value_network  # XXX: Original setup; wrong?
 
-    # fda.comparators.data = fda.comparators.data.unsqueeze(-1)
-    policy_agent.action_network = fda
-    # fsc.comparators.data = fsc.comparators.data.unsqueeze(-1)
-    policy_agent.value_network = fdc
     master_states = []
     master_actions = []
-    reward_after_five = 0
+    rewards_after_five = []
     for _ in range(num_runs):
-        if env == 'FindAndDefeatZerglings':
-            reward, replay_buffer = micro_episode(None, policy_agent, game_mode=env)
-        elif gym_env is None:
-            raise ValueError("Unknown environment", env)
+        if env == "FindAndDefeatZerglings":
+            try:
+                reward, replay_buffer = sc_episode(None, policy_agent, game_mode="FindAndDefeatZerglings")
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception:
+                logging.exception("Error in micro_episode")
+                continue
         else:
-            reward, replay_buffer = gym_episode(None, gym_env, policy_agent)
-        master_states.extend(replay_buffer['states'])
-        master_actions.extend(replay_buffer['actions_taken'])
-        reward_after_five += reward
+            assert gym_env
+            reward, replay_buffer = gym_episode(None, gym_env, policy_agent, render_mode=render_mode)
+        master_states.extend(replay_buffer["states"])
+        master_actions.extend(replay_buffer["actions_taken"])
+        rewards_after_five.append(reward)
+    mean_reward_after_five = np.mean(rewards_after_five).item()
     if verbose:
-        print(f"Average reward after {num_runs} runs is {reward_after_five/num_runs:.3f}")
+        print(f"Average reward after {num_runs} runs is {mean_reward_after_five:.3f}")
 
-    master_states = torch.cat([state[0] for state in master_states], dim=0)
-    if args_in.discretize:
-        crispy_actor = convert_to_discrete(policy_agent.action_network)  # Discretize DDT
+    # Run Discrete
+    if run_discrete:
+        master_states = torch.cat([state[0] for state in master_states], dim=0)
+        if not classic_decision_tree:
+            crispy_actor = convert_to_discrete(policy_agent.action_network)  # Discretize DDT
+        else:
+            ###### test with a DT #######
+            x_train = [state.cpu().numpy().reshape(-1) for state in master_states]
+            y_train = [action.cpu().numpy().reshape(-1) for action in master_actions]
+            clf = DecisionTreeClassifier(max_depth=3)
+            clf.fit(x_train, y_train)
+            plt.figure(figsize=(20, 20))
+            plot_tree(clf, filled=True)
+            plt.savefig('tree.png')
+            init_weights, init_comparators, init_leaves = ddt_init_from_dt(clf)
+            crispy_actor = DDT(input_dim=len(x_train[0]),
+                            output_dim=len(np.unique(y_train)),
+                            weights=init_weights,
+                            comparators=init_comparators,
+                            leaves=init_leaves,
+                            alpha=99999.,
+                            is_value=False,
+                            use_gpu=False)
+        if verbose:
+            print("-----------\nCrispy:\n")
+
+        policy_agent.action_network = crispy_actor
+        crispy_reward = []
+        for _ in range(num_runs):
+            if env == "FindAndDefeatZerglings":
+                try:
+                    crispy_out, replay_buffer = sc_episode(None, policy_agent, env)
+                except (KeyboardInterrupt, SystemExit):
+                    raise
+                except Exception:
+                    logging.exception("Error in micro_episode")
+                    crispy_out = -3
+                    continue
+            else:
+                assert gym_env
+                crispy_out, replay_buffer = gym_episode(None, gym_env, policy_agent)
+
+            crispy_reward.append(crispy_out)
+
+        if verbose > 1:
+            # For printing select the most chosen leaf
+            leaves = crispy_actor.leaf_init_information
+            for leaf_ind in range(len(leaves)):
+                leaves[leaf_ind] = (*leaves[leaf_ind][:-1], np.argmax(leaves[leaf_ind][-1]).item())
+            print(leaves)
+            print(crispy_actor.comparators.detach().numpy().reshape(-1))
+            ddt_weights = crispy_actor.layers.detach().numpy()
+            print(np.argmax(np.abs(ddt_weights), axis=1))
     else:
-        ###### test with a DT #######
-        x_train = [state.cpu().numpy().reshape(-1) for state in master_states]
-        y_train = [action.cpu().numpy().reshape(-1) for action in master_actions]
-        clf = DecisionTreeClassifier(max_depth=3)
-        clf.fit(x_train, y_train)
-        plt.figure(figsize=(20, 20))
-        plot_tree(clf, filled=True)
-        plt.savefig('tree.png')
-        init_weights, init_comparators, init_leaves = ddt_init_from_dt(clf)
-        crispy_actor = DDT(input_dim=len(x_train[0]),
-                           output_dim=len(np.unique(y_train)),
-                           weights=init_weights,
-                           comparators=init_comparators,
-                           leaves=init_leaves,
-                           alpha=99999.,
-                           is_value=False,
-                           use_gpu=False)
+        crispy_reward = None
     if verbose:
-        print("-----------\nCrispy:\n")
-
-    policy_agent.action_network = crispy_actor
-    crispy_reward = []
-    for _i in range(num_runs):
-        if env == 'FindAndDefeatZerglings':
-            crispy_out, replay_buffer = micro_episode(None, policy_agent, game_mode=env)
-        elif env in ['cart', 'lunar']:
-            crispy_out, replay_buffer = gym_episode(None, gym_env, policy_agent)
-        else:
-            raise ValueError(f"Unknown environment {env}")
-        crispy_reward.append(crispy_out)
-
-    if verbose > 1:
-        # For printing select the most chosen leaf
-        leaves = crispy_actor.leaf_init_information
-        for leaf_ind in range(len(leaves)):
-            leaves[leaf_ind] = (*leaves[leaf_ind][:-1], np.argmax(leaves[leaf_ind][-1]).item())
-        print(leaves)
-        print(crispy_actor.comparators.detach().numpy().reshape(-1))
-        ddt_weights = crispy_actor.layers.detach().numpy()
-        print(np.argmax(np.abs(ddt_weights), axis=1))
-    if verbose:
-        print(
-            f"Average reward after {num_runs} runs is {reward_after_five/num_runs:.3f}\n"
-            f"Average reward for the crispy network after {num_runs} runs is {np.mean(crispy_reward)} "
-            f"with std {np.std(crispy_reward):.3f}",
-        )
-    return reward_after_five / num_runs, np.mean(crispy_reward), np.std(crispy_reward)
+        msg = f"Average reward after {num_runs} runs is {mean_reward_after_five:.3f}\n"
+        if run_discrete and crispy_reward is not None:
+            msg += (
+                f"Average reward for the crispy network after {num_runs} runs is {np.mean(crispy_reward)} "
+                f"with std {np.std(crispy_reward):.3f}"
+            )
+        print(msg)
+    elif parallel_count is not None:
+        # not a precise but estimated progress count
+        print(f"{'~'+str(parallel_count[0]):>7}/{parallel_count[1]}", end="\r", flush=True)
+    else:
+        print(".", end="", flush=True)
+    if run_discrete and crispy_reward is not None:
+        return Result(
+                str(fn),
+                mean_reward_after_five,
+                np.std(rewards_after_five).item(),
+                np.mean(crispy_reward).item(),
+                np.std(crispy_reward).item(),
+            )
+    return mean_reward_after_five
 
 
 def fc_state_dict(fn=''):
@@ -343,25 +339,34 @@ def test_model(
         print(".", end="", flush=True)
     filename = discrete_fn.name if isinstance(discrete_fn, Path) else discrete_fn
     # Run model
-    (
-        avg_reward_diff,
-        avg_reward_discrete,
-        std_reward_discrete,
-    ) = run_a_model(filename, args, seed=seed, verbose=verbose)
-    # Gather results
-    header = match_filename(filename).groupdict()
-    version = header.get("version", 99)
-    version = int(version) if version is not None else 99
-    index = (
-        header["env"],
-        header["method"],
-        header["typ"],
-        int(header["num"]),
-        bool(header["GPU"]),
-        version,
-        int(header["episode"]),
+    result = evaluate_model(
+        filename,
+        env=None,
+        seed=seed,
+        verbose=verbose,
+        run_discrete=True,
+        classic_decision_tree=not args.discretize,
+        parallel_count=None,  # print count here
     )
-    return (index, (avg_reward_diff, avg_reward_discrete, std_reward_discrete))
+    # Gather results
+    match = match_filename(filename)
+    if match:
+        header: dict[str, str] = match.groupdict()
+        version = header.get("version", 99)
+        version = int(version) if version is not None else 99
+        index = (
+            header["env"],
+            header["method"],
+            header["typ"],
+            int(header["num"]),
+            bool(header["GPU"]),
+            version,
+            int(header["episode"]),
+        )
+    else:
+        index = None
+        raise ValueError(f"{filename} does not match pattern")
+    return (index, result)
 
 
 if __name__ == "__main__":
@@ -469,7 +474,8 @@ if __name__ == "__main__":
             print("\n")
         else:
             results = [test_model(discrete_fn) for discrete_fn in models]
-        for index, (avg_reward_diff, avg_reward_discrete, std_reward_discrete) in results:
+        for index, result in results:
+            (_, avg_reward_diff, _, avg_reward_discrete, std_reward_discrete) = result
             results_df.loc[index, "test_diff_reward"] = round(avg_reward_diff, 3)
             results_df.loc[index, "test_disc_reward"] = round(avg_reward_discrete, 3)
             results_df.loc[index, "test_disc_std"] = round(std_reward_discrete, 3)

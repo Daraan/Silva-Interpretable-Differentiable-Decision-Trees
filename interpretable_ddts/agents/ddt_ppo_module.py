@@ -15,7 +15,7 @@ from ray.rllib.utils.deprecation import logger as _deprecation_logger
 from ray.rllib.utils.metrics import EPISODE_RETURN_MEAN
 
 from interpretable_ddts.agents._agent_interface import AgentBase
-from interpretable_ddts.agents.ddt import DDT, LeafInfo
+from interpretable_ddts.agents.ddt import DDT
 from interpretable_ddts.opt_helpers import ppo_update
 from interpretable_ddts.opt_helpers.replay_buffer import (
     ReplayBufferSingleAgent as SilvaReplayBuffer,
@@ -30,6 +30,7 @@ _deprecation_logger.setLevel(__old_level)
 
 if TYPE_CHECKING:
     import gymnasium as gym
+    from interpretable_ddts.agents.ddt import LeafInfo
 
 def init_rule_list(num_rules, dim_in, dim_out):
     weights = np.random.rand(num_rules, dim_in)
