@@ -112,7 +112,7 @@ class DDTModule(PPOTorchRLModule):
                 self.bot_name += str(num_rules) + '_leaves'
 
         # Use is_value=True to NOT apply the softmax and return logits
-        self.action_network = DDT(
+        self.__action_network = DDT(
             input_dim=input_dim,
             output_dim=output_dim,
             weights=init_weights,
@@ -124,7 +124,7 @@ class DDTModule(PPOTorchRLModule):
             is_value=not self.model_config.get("action_use_softmax", False),
             use_gpu=self.model_config["use_gpu"],
         )
-        self.value_network = DDT(
+        self.__value_network = DDT(
             input_dim=input_dim,
             output_dim=1 if not self.model_config["vf_double_output"] else 2,
             weights=init_weights,
@@ -134,8 +134,8 @@ class DDTModule(PPOTorchRLModule):
             is_value=True,
             use_gpu=self.model_config["use_gpu"],
         )
-        self.vf = self.value_network
-        self.pi = self.action_network
+        self.vf = self.__value_network
+        self.pi = self.__action_network
 
         self._max_inputs = 10
 

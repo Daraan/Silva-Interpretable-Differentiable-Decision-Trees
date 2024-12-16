@@ -411,5 +411,7 @@ if __name__ == "__main__":
             # JSON, CSV, and Tensorboard loggers are created automatically by Tune
             # to disable set TUNE_DISABLE_AUTO_CALLBACK_LOGGERS environment variable to "1"
             callbacks=callbacks,
+            # Use fail_fast for during debugging/testing to stop all experiments
+            failure_config=train.FailureConfig(fail_fast=True),
         ),
     ).fit()
