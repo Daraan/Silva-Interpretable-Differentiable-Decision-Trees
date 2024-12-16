@@ -59,6 +59,10 @@ def init_rule_list(num_rules: int, dim_in: int, dim_out: int):
 
 
 class DDTAgent(AgentBase):
+
+    action_network: DDT
+    value_network: DDT
+
     def __init__(
         self,
         bot_name="DDT",
@@ -169,11 +173,23 @@ class DDTAgent(AgentBase):
         save_ddt(act_fn, self.action_network)
         save_ddt(val_fn, self.value_network)
 
-    def load(self, fn='last', version=None):
-        assert version
-        act_fn = str(fn) + self.bot_name + '_actor' + f'_v{version}.pth.tar'
-        val_fn = str(fn) + self.bot_name + '_critic' + f'_v{version}.pth.tar'
+    def load(self, fn: str | Path ='last', *, version=None, auto_naming=True):
+        """
+        Replaced the action and value network of the agent
 
+        Args:
+            auto_naming: Will use the botn_ame and version to construct actor and critic network.
+            Otherwise the fn must contain _actor in its name, which is replaced by _critic to load
+            the critic network
+        """
+        if auto_naming:
+            assert version is not None
+            act_fn = str(fn) + self.bot_name + '_actor' + f'_v{version}.pth.tar'
+            val_fn = str(fn) + self.bot_name + '_critic' + f'_v{version}.pth.tar'
+        else:
+            act_fn = str(fn)
+            assert "_actor" in act_fn
+            val_fn = act_fn.replace("_actor", "_critic")
         if os.path.exists(act_fn):
             self.action_network = load_ddt(act_fn)
             self.value_network = load_ddt(val_fn)

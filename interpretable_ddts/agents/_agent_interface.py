@@ -44,7 +44,7 @@ class AgentBase:
         if version is None:
             self._check_version()
         else:
-            self.version = version
+            self.version = version  # calls version.setter
 
         # Not set attributes
         self.replay_buffer: replay_buffer.ReplayBufferSingleAgent

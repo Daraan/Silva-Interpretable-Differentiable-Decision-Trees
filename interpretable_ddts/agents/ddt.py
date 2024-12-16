@@ -7,6 +7,8 @@ import numpy as np
 import torch
 from torch import nn
 
+from interpretable_ddts.opt_helpers.discretization import convert_to_discrete
+
 if TYPE_CHECKING:
     from interpretable_ddts.agents.ddt_agent import LeafInfo
 
@@ -250,3 +252,6 @@ class DDT(nn.Module):
             return actions  # Return logits
         # Else return probabilities
         return self.softmax(actions)
+
+    def create_discrete_copy(self):
+        return convert_to_discrete(self)
