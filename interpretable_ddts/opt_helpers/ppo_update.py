@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from interpretable_ddts.opt_helpers.replay_buffer import (
         ReplayBufferSingleAgent as SilvaReplayBuffer,
     )
+    from interpretable_ddts.agents.ddt_agent import AgentBase
 
 
 class PPO:
@@ -40,7 +41,7 @@ class PPO:
         self.two_nets = two_nets
         self.epoch_counter = 0
 
-    def batch_updates(self, rollouts: "SilvaReplayBuffer", agent_in):
+    def batch_updates(self, rollouts: "SilvaReplayBuffer", agent_in: "AgentBase"):
         if self.actor.input_dim < 10:
             batch_size = max(rollouts.step // 16, 1)
             num_iters = rollouts.step // batch_size

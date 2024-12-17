@@ -225,8 +225,8 @@ class DDTAgent(AgentBase):
             assert "_actor" in act_fn
             val_fn = act_fn.replace("_actor", "_critic")
         if os.path.exists(act_fn):
-            self.action_network = load_ddt(act_fn)
-            self.value_network = load_ddt(val_fn)
+            self.action_network = load_ddt(act_fn)  # type: ignore[assignment]
+            self.value_network = load_ddt(val_fn)   # type: ignore[assignment]
         else:
             msg = f"No such file or directory:' {act_fn}'"
             raise FileNotFoundError(msg)
@@ -260,8 +260,8 @@ class DDTAgent(AgentBase):
                 f"rule_list: {self.rule_list}",
             ]) + "\n")
 
-    def duplicate(self):
-        new_agent = DDTAgent(bot_name=self.bot_name.rstrip('_'),
+    def duplicate(self, *, discrete=False):
+        new_agent = self.__class__(bot_name=self.bot_name.rstrip('_'),
                              input_dim=self.input_dim,
                              output_dim=self.output_dim,
                              rule_list=self.rule_list,
@@ -271,5 +271,10 @@ class DDTAgent(AgentBase):
                              _duplicate=True,
                              use_gpu=False,  # <-----
                              )
+        # NOTE: networks are still shared!
         new_agent.__setstate__X(self.__getstate__X())
+        if not discrete:
+            return new_agent
+        new_agent.action_network = new_agent.action_network.create_discrete_copy()
+        new_agent.value_network = new_agent.value_network.create_discrete_copy()
         return new_agent

@@ -51,11 +51,11 @@ class DDT(nn.Module):
             self._depth = int(np.floor(np.log2(leaves)))
         else:
             # With rule_list or duplication
-            #logger.warning(
+            # logger.warning(
             #    "Unexpected leaf information type %s; using depth=4. NOTE: the value should not be passed",
             #    type(leaves),
-            #)
-            #self._depth = None  # should not be used
+            # )
+            # self._depth = None  # should not be used
             assert weights is not None
             assert comparators is not None
             assert isinstance(leaves, list)
@@ -110,7 +110,7 @@ class DDT(nn.Module):
         if self.use_gpu:
             self.alpha = self.alpha.cuda()
         self.alpha.requires_grad = True
-        self.alpha = nn.Parameter(self.alpha)
+        self.alpha = nn.Parameter(self.alpha)  # NOTE: Alpha is learned!
 
     def init_paths(self):
         """Create 0|1 boolean tensors for left and right paths."""
@@ -200,7 +200,7 @@ class DDT(nn.Module):
 
     def forward(self, input_data: torch.Tensor | dict[str, torch.Tensor], embedding_list=None):
         if isinstance(input_data, dict):
-            input_data = input_data['obs']
+            input_data = input_data['obs']  # rllib input
 
         input_data = input_data.t().expand(self.layers.size(0), *input_data.t().size())
 
@@ -253,6 +253,6 @@ class DDT(nn.Module):
         # Else return probabilities
         return self.softmax(actions)
 
-    def create_discrete_copy(self):
+    def create_discrete_copy(self, *, preserve_actions: bool = True) -> "DDT":
         from interpretable_ddts.opt_helpers.discretization import convert_to_discrete  # lazy load circular.
-        return convert_to_discrete(self)
+        return convert_to_discrete(self, preserve_actions=preserve_actions)

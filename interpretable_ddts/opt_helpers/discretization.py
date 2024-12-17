@@ -1,9 +1,9 @@
 # Created by Andrew Silva on 3/29/19
 import numpy as np
+import torch
 from interpretable_ddts.agents.ddt import DDT
 
-
-def convert_to_discrete(fuzzy_model: "DDT", master_states=None):
+def convert_to_discrete(fuzzy_model: "DDT", *, preserve_actions: bool = True) -> "DDT":
     new_weights = []
     new_comps = []
 
@@ -33,14 +33,16 @@ def convert_to_discrete(fuzzy_model: "DDT", master_states=None):
                        is_value=fuzzy_model.is_value,
                        use_gpu=fuzzy_model.use_gpu)
 
+    # XXX: Are both needed should this be a hyperparameter?
     # For a ddt that preserves actions using softmaxes, use old action probs
-    crispy_model.action_probs.data = fuzzy_model.action_probs.data
-    #
-    # For a set of discrete ddt parameters (0, 1) leaves, use the one-hot method:
-    # max_inds = fuzzy_model.action_probs.data.argmax(dim=1)
-    # new_action_probs = torch.zeros_like(fuzzy_model.action_probs.data)
-    # new_action_probs[np.arange(len(new_action_probs)), max_inds] = 10
-    # crispy_model.action_probs.data = new_action_probs
+    if preserve_actions:
+        crispy_model.action_probs.data = fuzzy_model.action_probs.data
+    else:
+        # For a set of discrete ddt parameters (0, 1) leaves, use the one-hot method:
+        max_inds = fuzzy_model.action_probs.data.argmax(dim=1)
+        new_action_probs = torch.zeros_like(fuzzy_model.action_probs.data)
+        new_action_probs[np.arange(len(new_action_probs)), max_inds] = 10
+        crispy_model.action_probs.data = new_action_probs
 
     if fuzzy_model.use_gpu:
         crispy_model = crispy_model.cuda()

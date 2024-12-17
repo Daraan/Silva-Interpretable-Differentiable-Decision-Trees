@@ -202,11 +202,34 @@ class DDTModuleGymRunner(DDTModule, AgentBase):
     def save(self, path):
         pass
 
-    def duplicate(self):
-        return self
+    def duplicate(self, *, discrete=False):
+        # from copy import deepcopy
+        # new_agent = deepcopy(self)
+        new_agent = self.__class__(
+            observation_space = self.observation_space,
+            action_space = self.action_space,
+            inference_only=self.inference_only, # could possibly set this to False, value missing then?
+            learner_only=False,
+            model_config=self.model_config,
+            catalog_class=self.catalog.__class__,
+        )
+        new_agent.setup(duplicate=True)  # this sets pi, vf and ppo
+        # copy weights
+        if discrete:
+            new_agent.pi = self.pi.create_discrete_copy()
+            new_agent.vf = self.vf.create_discrete_copy()
+            new_agent.ppo = ppo_update.PPO([new_agent.pi, new_agent.vf], two_nets=True, use_gpu=False)
+        else:
+            new_agent.pi = self.pi
+            new_agent.vf = self.vf
+            new_agent.ppo = self.ppo
+        return new_agent
 
     def end_episode(self, reward):
+        if self._duplicate:
+            logging.warning("Calling end_episode on a duplicate agent")
         AgentBase.end_episode(self, reward)
+        # This should only be used in gym_runner which does not use ray train; only one report per episode
         ray.train.report(
             checkpoint=None,
             metrics={

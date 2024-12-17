@@ -35,11 +35,10 @@ GYM_V_0_26 = GYM_VERSION >= Version("0.26")
 """First gymnasium version"""
 GYM_V1 = GYM_VERSION >= Version("1.0.0")
 
-
 def run_episode(
-    q, env: gym.Env[ObsType, ActType], agent_in: AgentBase, *, render_mode=None,
+    q, env: gym.Env[ObsType, ActType], agent_in: AgentBase, *, render_mode=None, **kwargs,
 ) -> tuple[float, dict[str, Any]]:
-    agent = agent_in.duplicate()  # NOTE: Weights are not copied
+    agent = agent_in.duplicate(**kwargs)  # NOTE: Weights are not copied
 
     # Reset without resetting the RNG generator to get an initial observation
     if GYM_V_0_26:
@@ -88,7 +87,6 @@ def main(
     pbar: bool | Iterable[int] = True,
     render_mode=None,
 ):
-    running_reward_array = []
     if agent.save_output:
         assert agent.rewards_file
         models_path = Path("../models") / (agent.bot_name + f"_v{agent.version}")
@@ -135,7 +133,15 @@ def main(
     def is_pbar(pbar) -> TypeGuard[tqdm]:  # noqa: ARG001
         return use_pbar
 
+    try:
+        agent.duplicate(discrete=True)  # type: ignore
+        can_duplicate_discrete = True
+    except TypeError:
+        can_duplicate_discrete = False
+
     reward = episode = running_reward = float("nan")
+    running_reward_array = []
+    discrete_running_reward_array = []
     for episode in pbar:
         returned_object = run_episode(
             None,
@@ -144,7 +150,7 @@ def main(
             render_mode=render_mode,
         )
         reward = returned_object[0]
-        running_reward_array.append(returned_object[0])
+        running_reward_array.append(reward)
         agent.replay_buffer.extend(returned_object[1])
         if (
             agent.save_output
@@ -152,16 +158,33 @@ def main(
             and episode % 500 != 0  # saved below
         ):
             agent.save(models_path / f"{episode}th")
+        if can_duplicate_discrete:
+            discrete_returned_object = run_episode(
+                None,
+                env=env,
+                agent_in=agent,
+                render_mode=render_mode,
+                discrete=True,
+            )
+            discrete_running_reward_array.append(discrete_returned_object[0])
         agent.end_episode(reward)
 
         running_reward = sum(running_reward_array[-100:]) / float(min(100.0, len(running_reward_array)))
         if is_pbar(pbar) and episode % 2 == 0:
-            pbar.set_description(
+            desc = (
                 f"{agent.bot_name}_v{agent.version} "
                 f"|Ep. {episode:<4} |Rwrd: {reward:>4.0f} "
                 f"|Avg. Rwrd: {running_reward:>4.0f} "
-                f"|Len {returned_object[1]['steps']:>3}",
+                f"|Len {returned_object[1]['steps']:>3}"
             )
+            if can_duplicate_discrete:
+                desc += f"|Disc Rwrd: {discrete_running_reward_array[-1]:>4.0f}"
+                discrete_running_reward = sum(discrete_running_reward_array[-100:]) / float(
+                    min(100.0, len(discrete_running_reward_array))
+                )
+                desc += f"|Avg. Disc Rwrd: {discrete_running_reward:>4.0f}"
+
+            pbar.set_description(desc)
         if agent.save_output and episode % 500 == 0:
             agent.save(models_path / f"{episode}th")
     # Save final episode
