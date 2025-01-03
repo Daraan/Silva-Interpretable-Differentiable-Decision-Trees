@@ -6,6 +6,7 @@ import math
 import os
 from functools import partial
 from pathlib import Path
+import sys
 from typing import TYPE_CHECKING, Any, Optional, TypeVar
 
 import gymnasium as gym
@@ -66,12 +67,12 @@ def create_ddt_config(
         # num_gpus=1 if args.gpu else 0,4
         # process that runs Algorithm.training_step() during Tune
         num_cpus_for_main_process=1,
-        # num_learner_workers=0 if args.not_parallel else 4,
+        # num_learner_workers=4 if args.parallel else 1,
         # num_cpus_per_learner_worker=1,
         # num_cpus_per_worker=1,
     )
     config.env_runners(
-        num_env_runners=0 if args.not_parallel else 2,
+        num_env_runners=2 if args.parallel else 0,
         num_cpus_per_env_runner=1,  # num_cpus_per_worker
         # explore=False,
         # How long an rollout episode lasts, for "auto" calculated from batch_size
@@ -92,7 +93,7 @@ def create_ddt_config(
     )
     config.learners(
         # for fractional GPUs, you should always set num_learners to 0 or 1
-        num_learners=0 if args.not_parallel else 0,
+        num_learners=0 if args.parallel else 0,
         num_cpus_per_learner=1,
         num_gpus_per_learner=1 if args.gpu else 0,
     )
@@ -160,13 +161,7 @@ def create_ddt_config(
         evaluation_interval=10,
         evaluation_duration=5,
         evaluation_duration_unit="episodes",
-        evaluation_num_env_runners=0 if args.not_parallel else 2,
-        evaluation_config={
-            # NOTE: Policy gradient algorithms are able to find the optimal
-            # policy, even if this is a stochastic one. Setting "explore=False" here
-            # results in the evaluation workers not using this optimal policy!
-            "explore": False,
-        },
+        evaluation_num_env_runners=2 if args.parallel else 0,
     )
 
     config.reporting(
@@ -199,7 +194,22 @@ if __name__ == "__main__":
     parser.add_argument("-gpu", "--gpu", help="run on GPU?", action="store_true")
     parser.add_argument("-r", "--rule_list", help="Use rule list setup", action="store_true", default=False)
     parser.add_argument("-s", "--seed", help="Seed", default=-1, type=int)
-    parser.add_argument("-np", "--not_parallel", help="Do not run in parallel", action="store_true", default=False)
+    parser.add_argument("-J", "--num_jobs", help="Amount of jobs the Tuner does start", default=5, type=int)
+    parser.add_argument(
+        "-np",
+        "--not_parallel",
+        help="Do not run multiple models in parallel, i.e. the Tuner will execute one job only. "
+        "This is equivalent to num_jobs=1",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "-mp",
+        "--parallel",
+        help="Use multiple CPUs per worker",
+        action="store_true",
+        default=False,
+    )
     parser.add_argument("-p", "--process_number", help="Process number", type=int, default=0)
     parser.add_argument(
         "--silent",
@@ -264,9 +274,16 @@ if __name__ == "__main__":
         else:
             pbar = range(args.episodes)
         running_eval_rewards = []
+        running_rewards = []
         for _episode in pbar:
             result = algo.train()
             # Results
+            train_reward = result[ENV_RUNNER_RESULTS].get(EPISODE_RETURN_MEAN, float("nan"))
+            if not math.isnan(train_reward):
+                running_rewards.append(train_reward)
+            running_reward = sum(running_rewards[-100:]) / (
+                min(100, len(running_rewards)) or float("nan")  # nan for 0
+            )
             eval_results = result.get(EVALUATION_RESULTS, {})
             eval_env_runner_results = eval_results.get(ENV_RUNNER_RESULTS, {})
             eval_mean = eval_env_runner_results.get(EPISODE_RETURN_MEAN, float("nan"))
@@ -277,7 +294,8 @@ if __name__ == "__main__":
             )
             metrics = {
                 TRAIN_METRIC_RETURN_MEAN: result[ENV_RUNNER_RESULTS].get(
-                    EPISODE_RETURN_MEAN, None,
+                    EPISODE_RETURN_MEAN,
+                    float("nan"),
                 ),
                 EVAL_METRIC_RETURN_MEAN: eval_mean,
             }
@@ -291,8 +309,9 @@ if __name__ == "__main__":
                 assert isinstance(pbar, (tqdm_ray.tqdm, tqdm))
             try:
                 pbar.set_description(
-                    f"Mean Rew: {metrics[TRAIN_METRIC_RETURN_MEAN]:>6.1f} |"
-                    f"Max Rew: {result['env_runners']['episode_return_max']:>4.0f} |"
+                    f"R mean: {metrics[TRAIN_METRIC_RETURN_MEAN]:>6.1f} |"
+                    f"R max: {result['env_runners']['episode_return_max']:>4.0f} |"
+                    f"R roll: {running_reward:>6.1f} |"
                     f"Eval Rew: {eval_mean:>6.1f} |"
                     f"Rolling Eval Rew: {running_eval_reward:>6.1f} |",
                 )
@@ -390,20 +409,23 @@ if __name__ == "__main__":
                 auto_histogram_activation_logging=True,  # Default False
             ),
         )
-    N_JOBS = 2
     # Will use these resources per job
     # NOTE: Even if not used will allocate these resources per run
-    trainable_with_resources = tune.with_resources(trainable, tune.PlacementGroupFactory(
-        [{'CPU': 1.0}] + [{'CPU': 1.0}] * (0 if args.not_parallel else 4),
-    ))
+    # trainable_with_resources = tune.with_resources(trainable, tune.PlacementGroupFactory(
+    #    [{'CPU': 1.0}] + [{'CPU': 1.0}] * (4 if args.parallel else 0),
+    # ))
     # Use tune.with_parameters to pass large objects to the trainable
+    if args.test and args.not_parallel:
+        result = build_and_train()
+        sys.exit()
+
     tune.Tuner(
         trainable,  # Note: possibly can also be a list
         # "PPO",
         # run_config=air.RunConfig(stop={"training_iteration": 1}),
         param_space=param_space,
         tune_config=tune.TuneConfig(
-            num_samples=N_JOBS,
+            num_samples=1 if args.not_parallel else args.num_jobs,
             # metric=
             #    (EVALUATION_RESULTS + "/" + ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
             #     if config.evaluation_interval else ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN),

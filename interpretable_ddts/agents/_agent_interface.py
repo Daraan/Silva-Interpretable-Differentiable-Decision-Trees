@@ -125,12 +125,12 @@ class AgentBase:
             action = action.item()
         return action  # type: ignore
 
-    def end_episode(self, timesteps):
+    def end_episode(self, reward):
         assert self.version is not None and self.rewards_file
-        self.reward_history.append(timesteps)
+        self.reward_history.append(reward)
         value_loss, action_loss = self.ppo.batch_updates(self.replay_buffer, self)
         if self.save_output:
-            self.rewards_file.open("a").write(str(timesteps) + "\n")
+            self.rewards_file.open("a").write(str(reward) + "\n")
         self.num_steps += 1
 
     def reset(self):
