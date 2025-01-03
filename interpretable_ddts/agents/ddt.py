@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-class DDT(nn.Module):
 
+class DDT(nn.Module):
     def __init__(
         self,
         *,
@@ -123,16 +123,16 @@ class DDT(nn.Module):
                 for j in self._unprocessed_leaf_info[n][1]:
                     right_branches[j][n] = 1.0
         else:
-            left_branches = torch.zeros((2 ** self._depth - 1, 2 ** self._depth))
+            left_branches = torch.zeros((2**self._depth - 1, 2**self._depth))
             for n in range(self._depth):
-                row = 2 ** n - 1
-                for i in range(2 ** self._depth):
+                row = 2**n - 1
+                for i in range(2**self._depth):
                     col = 2 ** (self._depth - n) * i
                     end_col = col + 2 ** (self._depth - 1 - n)
                     if row + i >= len(left_branches) or end_col >= len(left_branches[row]):
                         break
                     left_branches[row + i, col:end_col] = 1.0
-            right_branches = torch.zeros((2 ** self._depth - 1, 2 ** self._depth))
+            right_branches = torch.zeros((2**self._depth - 1, 2**self._depth))
             left_turns = np.where(left_branches == 1)
             for row in np.unique(left_turns[0]):
                 cols = left_turns[1][left_turns[0] == row]
@@ -155,7 +155,7 @@ class DDT(nn.Module):
         else:
             new_leaves: list[float | list[float]] = []
 
-            last_level = cast(list[int], np.arange(2**(self._depth-1)-1, 2**self._depth-1))
+            last_level = cast(list[int], np.arange(2 ** (self._depth - 1) - 1, 2**self._depth - 1))
             going_left = True
             leaf_index = 0
             self.leaf_init_information = []
@@ -183,15 +183,19 @@ class DDT(nn.Module):
                 new_probs: list[float] | float
                 if self.output_dim is None:
                     new_probs = np.random.uniform(
-                        0, 1, self.output_dim,
+                        0,
+                        1,
+                        self.output_dim,
                     )  # *(1.0/self.output_dim)
                 else:
                     new_probs = np.random.uniform(
-                        0, 1, self.output_dim,
+                        0,
+                        1,
+                        self.output_dim,
                     ).tolist()  # *(1.0/self.output_dim)
                 self.leaf_init_information.append((sorted(left_path), sorted(right_path), new_probs))
                 new_leaves.append(new_probs)
-        new_leaves = np.array(new_leaves) # single array for tensor creation  # type: ignore
+        new_leaves = np.array(new_leaves)  # single array for tensor creation  # type: ignore
         labels = torch.Tensor(new_leaves)
         if self.use_gpu:
             labels = labels.cuda()
@@ -200,7 +204,7 @@ class DDT(nn.Module):
 
     def forward(self, input_data: torch.Tensor | dict[str, torch.Tensor], embedding_list=None):
         if isinstance(input_data, dict):
-            input_data = input_data['obs']  # rllib input
+            input_data = input_data["obs"]  # rllib input
 
         input_data = input_data.t().expand(self.layers.size(0), *input_data.t().size())
 
@@ -215,7 +219,7 @@ class DDT(nn.Module):
 
         one_minus_sig = torch.ones(sig_vals.size())
         if self.use_gpu:
-            one_minus_sig = one_minus_sig.to('cuda')
+            one_minus_sig = one_minus_sig.to("cuda")
 
         one_minus_sig = torch.sub(one_minus_sig, sig_vals)
 
@@ -255,4 +259,5 @@ class DDT(nn.Module):
 
     def create_discrete_copy(self, *, preserve_actions: bool = True) -> "DDT":
         from interpretable_ddts.opt_helpers.discretization import convert_to_discrete  # lazy load circular.
+
         return convert_to_discrete(self, preserve_actions=preserve_actions)

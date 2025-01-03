@@ -38,7 +38,7 @@ from interpretable_ddts.agents.ppo_learner import SilvaLearner
 if TYPE_CHECKING:
     from tqdm import tqdm
 
-os.environ["RAY_COLOR_PREFIX"]="1"
+os.environ["RAY_COLOR_PREFIX"] = "1"
 
 RAY_VERSION = parse_version(ray.__version__)
 
@@ -50,8 +50,11 @@ logger = logging.getLogger(__name__)
 
 _ConfigType = TypeVar("_ConfigType", bound=PPOConfig)
 
+
 def create_ddt_config(
-    args: argparse.Namespace, env: str | gym.Env, config_class: type[_ConfigType] = PPOConfig,
+    args: argparse.Namespace,
+    env: str | gym.Env,
+    config_class: type[_ConfigType] = PPOConfig,
 ) -> tuple[_ConfigType, RLModuleSpec]:
     config = config_class()
     config.environment(env)
@@ -106,9 +109,8 @@ def create_ddt_config(
         lr=(
             1e-3
             if True
-            else
             # Shedule LR
-            [
+            else [
                 [0, 8e-3],  # <- initial value at timestep 0
                 [100, 4e-3],
                 [400, 1e-3],
@@ -208,7 +210,11 @@ if __name__ == "__main__":
     parser.add_argument("--test", "--dry-run", help="Do not save any models", action="store_true", default=False)
     parser.add_argument("--wandb", "-wb", help="Log to WandB", action="store_true", default=False)
     parser.add_argument(
-        "--comet", nargs="?", help="Log to Comet", const="1", default="1",
+        "--comet",
+        nargs="?",
+        help="Log to Comet",
+        const="1",
+        default="off",
         choices=["offline", "0", "1", "False", "off"],
     )
     parser.add_argument(
@@ -226,23 +232,23 @@ if __name__ == "__main__":
     if args.seed == -1:
         args.seed = None
 
-    if args.env_type == 'lunar':
-        init_env = gym.make('LunarLander-v2')
+    if args.env_type == "lunar":
+        init_env = gym.make("LunarLander-v2")
         dim_in = init_env.observation_space.shape[0]  # pyright: ignore[reportOptionalSubscript]
         dim_out = init_env.action_space.n  # type: ignore[attr-defined]
         env = "LunarLander-v2"
-    elif args.env_type == 'cart':
-        init_env = gym.make('CartPole-v1')
+    elif args.env_type == "cart":
+        init_env = gym.make("CartPole-v1")
         dim_in = init_env.observation_space.shape[0]  # pyright: ignore[reportOptionalSubscript]
         dim_out = init_env.action_space.n  # type: ignore[attr-defined]
         env = "CartPole-v1"
     else:
-        raise ValueError(f'No valid environment {args.env_type}')
+        raise ValueError(f"No valid environment {args.env_type}")
     dim_int, dim_out = int(dim_in), int(dim_out)  # might be np
 
     config, module_spec = create_ddt_config(args, env)
 
-    def build_and_train(index: Optional[int | dict[str, Any]]=None, *, use_pbar=True):
+    def build_and_train(index: Optional[int | dict[str, Any]] = None, *, use_pbar=True):
         """
         Args:
             index: Is a `dict` / `param_spec` if this is used by Tune.
@@ -303,9 +309,11 @@ if __name__ == "__main__":
         from interpretable_ddts.agents.ddt_ppo_module import DDTModuleGymRunner
 
         module_spec.module_class = DDTModuleGymRunner
-        module_spec.model_config.update({
-            "save_output": False,
-        })
+        module_spec.model_config.update(
+            {
+                "save_output": False,
+            }
+        )
         module_spec.model_config.update(
             {
                 "save_output": not args.test,
@@ -336,10 +344,10 @@ if __name__ == "__main__":
     else:
         trainable = partial(build_and_train, use_pbar=True)
     param_space = {
-        "env" : str(config.env),
-        "algo" : config.algo_class.__name__,
+        "env": str(config.env),
+        "algo": config.algo_class.__name__,
         "module": config.rl_module_spec.module_class.__name__,
-        "model_config" : config.rl_module_spec.model_config,
+        "model_config": config.rl_module_spec.model_config,
     }
     param_space = {k: tune.choice([v]) for k, v in param_space.items()}
 
@@ -370,12 +378,11 @@ if __name__ == "__main__":
                 disabled=args.comet == "offline",  # do not upload
                 save_checkpoints=False,
                 tags=["test", "dev"],
-
                 # Other keywords see: https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment/
                 auto_metric_step_rate=10,  # How often batch metrics are logged
                 log_git_metadata=True,  # disabled by rllib
                 log_graph=True,  # Default True
-                #api_key=,
+                # api_key=,
                 log_env_details=True,
                 auto_log_co2=False,  # needs codecarbon
                 auto_histogram_weight_logging=True,  # Default False

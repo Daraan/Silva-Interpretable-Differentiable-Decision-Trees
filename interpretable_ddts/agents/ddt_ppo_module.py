@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     import gymnasium as gym
     from interpretable_ddts.agents.ddt import LeafInfo
 
+
 def init_rule_list(num_rules, dim_in, dim_out):
     weights = np.random.rand(num_rules, dim_in)
     leaves: list[LeafInfo] = []
@@ -44,6 +45,7 @@ def init_rule_list(num_rules, dim_in, dim_out):
     leaves.append(([], np.arange(0, num_rules).tolist(), np.random.rand(dim_out).tolist()))
     return weights, comparators, leaves
 
+
 class ModelConfigDict(TypedDict):
     bot_name: str
     num_rules: int
@@ -53,6 +55,7 @@ class ModelConfigDict(TypedDict):
     action_use_softmax: bool
     vf_double_output: bool
 
+
 class DDTModule(PPOTorchRLModule):
     observation_space: gym.Space
     action_space: gym.Space
@@ -61,7 +64,7 @@ class DDTModule(PPOTorchRLModule):
 
     def __init__(
         self,
-        config: RLModuleConfig=DEPRECATED_VALUE,  # type: ignore[arg-type]  # use -1 here to avoid errors
+        config: RLModuleConfig = DEPRECATED_VALUE,  # type: ignore[arg-type]  # use -1 here to avoid errors
         *,
         observation_space: Optional[gym.Space] = None,
         action_space: Optional[gym.Space] = None,
@@ -94,23 +97,25 @@ class DDTModule(PPOTorchRLModule):
         # super().setup() # Might create more modules, e.g. encoder
         assert isinstance(self.model_config, dict)
 
-        self.bot_name = self.model_config["bot_name"] + '_'
+        self.bot_name = self.model_config["bot_name"] + "_"
         num_rules: int = self.model_config["num_rules"]
         rule_list: bool = self.model_config["rule_list"]
         input_dim = self.observation_space.shape[0]  # type: ignore
         output_dim = int(self.action_space.n)  # type: ignore
         if rule_list:
-            if str(num_rules) + '_rules' not in self.bot_name:
-                self.bot_name += str(num_rules)+'_rules'
+            if str(num_rules) + "_rules" not in self.bot_name:
+                self.bot_name += str(num_rules) + "_rules"
             init_weights, init_comparators, init_leaves = init_rule_list(
-                num_rules, input_dim, output_dim,
+                num_rules,
+                input_dim,
+                output_dim,
             )
         else:
             init_weights = None
             init_comparators = None
             init_leaves = num_rules
-            if str(num_rules) + '_leaves' not in self.bot_name:
-                self.bot_name += str(num_rules) + '_leaves'
+            if str(num_rules) + "_leaves" not in self.bot_name:
+                self.bot_name += str(num_rules) + "_leaves"
 
         # Use is_value=True to NOT apply the softmax and return logits
         self.__action_network = DDT(
@@ -206,9 +211,9 @@ class DDTModuleGymRunner(DDTModule, AgentBase):
         # from copy import deepcopy
         # new_agent = deepcopy(self)
         new_agent = self.__class__(
-            observation_space = self.observation_space,
-            action_space = self.action_space,
-            inference_only=self.inference_only, # could possibly set this to False, value missing then?
+            observation_space=self.observation_space,
+            action_space=self.action_space,
+            inference_only=self.inference_only,  # could possibly set this to False, value missing then?
             learner_only=False,
             model_config=self.model_config,
             catalog_class=self.catalog.__class__,

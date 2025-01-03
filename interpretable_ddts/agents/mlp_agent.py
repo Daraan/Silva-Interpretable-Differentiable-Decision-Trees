@@ -11,7 +11,6 @@ from typing import Union, Optional
 
 
 class BaselineFCNet(nn.Module):
-
     def __init__(self, input_dim, *, output_dim=2, is_value=False, hidden_layers=1):
         super(BaselineFCNet, self).__init__()
         self.lin1 = nn.Linear(input_dim, input_dim)
@@ -46,11 +45,12 @@ class MLPAgent(AgentBase):
         output_dim=2,
         num_hidden=1,
         version: Optional[int] = None,
-        *, _duplicate=False,
+        *,
+        _duplicate=False,
         save_output: bool = True,
     ):
         # bot_name before calling super
-        self.bot_name = bot_name + "_" + str(num_hidden) + '_hid'
+        self.bot_name = bot_name + "_" + str(num_hidden) + "_hid"
         self.num_hidden = num_hidden
         super().__init__(
             input_dim,
@@ -61,14 +61,12 @@ class MLPAgent(AgentBase):
         )
 
         self.replay_buffer = replay_buffer.ReplayBufferSingleAgent()
-        self.action_network = BaselineFCNet(input_dim=input_dim,
-                                            output_dim=output_dim,
-                                            is_value=False,
-                                            hidden_layers=num_hidden)
-        self.value_network = BaselineFCNet(input_dim=input_dim,
-                                           output_dim=output_dim,
-                                           is_value=True,
-                                           hidden_layers=num_hidden)
+        self.action_network = BaselineFCNet(
+            input_dim=input_dim, output_dim=output_dim, is_value=False, hidden_layers=num_hidden
+        )
+        self.value_network = BaselineFCNet(
+            input_dim=input_dim, output_dim=output_dim, is_value=True, hidden_layers=num_hidden
+        )
 
         self.ppo = ppo_update.PPO([self.action_network, self.value_network], two_nets=True)
         self.actor_opt = torch.optim.RMSprop(self.action_network.parameters(), lr=5e-3)
@@ -113,57 +111,59 @@ class MLPAgent(AgentBase):
         return action
 
     def save_reward(self, reward):
-        self.replay_buffer.insert(obs=[self.last_state],
-                                  action_log_probs=self.last_action_probs,
-                                  value_preds=self.last_value_pred[self.last_action.item()],
-                                  last_action=self.last_action.item(),
-                                  full_probs_vector=self.full_probs,
-                                  rewards=reward)
+        self.replay_buffer.insert(
+            obs=[self.last_state],
+            action_log_probs=self.last_action_probs,
+            value_preds=self.last_value_pred[self.last_action.item()],
+            last_action=self.last_action.item(),
+            full_probs_vector=self.full_probs,
+            rewards=reward,
+        )
         return True
 
-    def save(self, path: Union[Path, str]='last', *, force_save: bool=False):
+    def save(self, path: Union[Path, str] = "last", *, force_save: bool = False):
         """
         Args:
             force_save: Still saves the output even in `save_output` is False
         """
         assert self.version is not None
         if not (self.save_output or force_save):
-            #logger.debug("Not saving output, because `save_output` is False")
+            # logger.debug("Not saving output, because `save_output` is False")
             return
         checkpoint = {
-            'actor' : self.action_network.state_dict(),
-            'value' : self.value_network.state_dict(),
+            "actor": self.action_network.state_dict(),
+            "value": self.value_network.state_dict(),
         }
         save_path = Path(str(path))
         save_path = save_path.with_name(save_path.name + self.bot_name + f"_v{self.version}" + ".pth.tar")
         torch.save(checkpoint, save_path)
 
-    def load(self, fn='last'):
+    def load(self, fn="last"):
         # fn = fn + self.bot_name + '.pth.tar'
-        model_checkpoint = torch.load(fn, map_location='cpu')
-        actor_data = model_checkpoint['actor']
-        value_data = model_checkpoint['value']
+        model_checkpoint = torch.load(fn, map_location="cpu")
+        actor_data = model_checkpoint["actor"]
+        value_data = model_checkpoint["value"]
         self.action_network.load_state_dict(actor_data)
         self.value_network.load_state_dict(value_data)
 
     def __getstate__(self):
         return {
             # 'replay_buffer': self.replay_buffer,
-            'action_network': self.action_network,
-            'value_network': self.value_network,
-            'ppo': self.ppo,
-            'actor_opt': self.actor_opt,
-            'value_opt': self.value_opt,
-            'num_hidden': self.num_hidden,
+            "action_network": self.action_network,
+            "value_network": self.value_network,
+            "ppo": self.ppo,
+            "actor_opt": self.actor_opt,
+            "value_opt": self.value_opt,
+            "num_hidden": self.num_hidden,
         }
 
     def __setstate__(self, state):
-        self.action_network = copy.deepcopy(state['action_network'])
-        self.value_network = copy.deepcopy(state['value_network'])
-        self.ppo = copy.deepcopy(state['ppo'])
-        self.actor_opt = copy.deepcopy(state['actor_opt'])
-        self.value_opt = copy.deepcopy(state['value_opt'])
-        self.num_hidden = copy.deepcopy(state['num_hidden'])
+        self.action_network = copy.deepcopy(state["action_network"])
+        self.value_network = copy.deepcopy(state["value_network"])
+        self.ppo = copy.deepcopy(state["ppo"])
+        self.actor_opt = copy.deepcopy(state["actor_opt"])
+        self.value_opt = copy.deepcopy(state["value_opt"])
+        self.num_hidden = copy.deepcopy(state["num_hidden"])
 
     @AgentBase.skip_if_no_output
     def _write_hparams(self):
@@ -185,13 +185,13 @@ class MLPAgent(AgentBase):
 
     def duplicate(self):
         new_agent = MLPAgent(
-            bot_name=self.bot_name.rstrip('_'),
+            bot_name=self.bot_name.rstrip("_"),
             input_dim=self.input_dim,
             output_dim=self.output_dim,
             num_hidden=self.num_hidden,
             version=self.version,
             save_output=self.save_output,
             _duplicate=True,
-            )
+        )
         new_agent.__setstate__(self.__getstate__())
         return new_agent

@@ -35,8 +35,14 @@ GYM_V_0_26 = GYM_VERSION >= Version("0.26")
 """First gymnasium version"""
 GYM_V1 = GYM_VERSION >= Version("1.0.0")
 
+
 def run_episode(
-    q, env: gym.Env[ObsType, ActType], agent_in: AgentBase, *, render_mode=None, **kwargs,
+    q,
+    env: gym.Env[ObsType, ActType],
+    agent_in: AgentBase,
+    *,
+    render_mode=None,
+    **kwargs,
 ) -> tuple[float, dict[str, Any]]:
     agent = agent_in.duplicate(**kwargs)  # NOTE: Weights are not copied
 
@@ -61,9 +67,11 @@ def run_episode(
         if done:
             break
     reward_sum = np.sum(agent.replay_buffer.rewards_list)
-    rewards_list, advantage_list, deeper_advantage_list = discount_reward(agent.replay_buffer.rewards_list,
-                                                                          agent.replay_buffer.value_list,
-                                                                          agent.replay_buffer.deeper_value_list)
+    rewards_list, advantage_list, deeper_advantage_list = discount_reward(
+        reward=agent.replay_buffer.rewards_list,
+        value=agent.replay_buffer.value_list,
+        deeper_value=agent.replay_buffer.deeper_value_list,
+    )
     agent.replay_buffer.rewards_list = rewards_list
     agent.replay_buffer.advantage_list = advantage_list
     agent.replay_buffer.deeper_advantage_list = deeper_advantage_list
@@ -90,7 +98,7 @@ def main(
     if agent.save_output:
         assert agent.rewards_file
         models_path = Path("../models") / (agent.bot_name + f"_v{agent.version}")
-        rewards_path = Path('../txts')
+        rewards_path = Path("../txts")
         models_path.mkdir(parents=True, exist_ok=True)
         rewards_path.mkdir(parents=True, exist_ok=True)
         # Create a link to the rewards file
@@ -195,10 +203,7 @@ def main(
             f"|Avg. Rwrd: {running_reward:>4.0f} "
             f"|Len {returned_object[1]['steps']:>3}",  # pyright: ignore[reportPossiblyUnboundVariable]
         )
-    if (
-        agent.save_output
-        and episode % 500 != 0
-    ):
+    if agent.save_output and episode % 500 != 0:
         agent.save(models_path / f"{episode}th")
 
     return running_reward_array
@@ -232,7 +237,10 @@ def create_rlib_agent(args, init_env: gym.Env):
 
 
 def start_process(
-    i, args: argparse.Namespace, init_env: Optional[gym.Env] = None, lock: Optional[Lock]=None,
+    i,
+    args: argparse.Namespace,
+    init_env: Optional[gym.Env] = None,
+    lock: Optional[Lock] = None,
 ):
     """Wrapper of main that can be used in parallel."""
     agent_type: "str | RLModuleSpec" = args.agent_type
@@ -252,7 +260,7 @@ def start_process(
     if args.gpu:
         bot_name += "GPU"
     # Use a lock for file creation
-    with (lock or nullcontext()):
+    with lock or nullcontext():
         if agent_type == "ddt":
             policy_agent = DDTAgent(
                 bot_name=bot_name,
@@ -303,27 +311,28 @@ def start_process(
         render_mode=args.render_mode,
     )
     return {
-        "running_reward_mean" : np.mean(reward_array[-100:]),
-        "perfect_episodes" : sum([1 for r in reward_array if r >= 499]),
+        "running_reward_mean": np.mean(reward_array[-100:]),
+        "perfect_episodes": sum([1 for r in reward_array if r >= 499]),
     }
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-a", "--agent_type", help="architecture of agent to run", type=str, default='ddt')
+    parser.add_argument("-a", "--agent_type", help="architecture of agent to run", type=str, default="ddt")
     parser.add_argument("-e", "--episodes", help="how many episodes", type=int, default=2000)
     parser.add_argument("-l", "--num_leaves", help="number of leaves for DDT/DRL ", type=int, default=8)
     parser.add_argument("-n", "--num_hidden", help="number of hidden layers for MLP ", type=int, default=0)
-    parser.add_argument("-env", "--env_type", help="environment to run on", type=str, default='cart')
-    parser.add_argument("-gpu", "--gpu", help="run on GPU?", action='store_true')
-    parser.add_argument("-r", "--rule_list", help="Use rule list setup", action='store_true', default=False)
+    parser.add_argument("-env", "--env_type", help="environment to run on", type=str, default="cart")
+    parser.add_argument("-gpu", "--gpu", help="run on GPU?", action="store_true")
+    parser.add_argument("-r", "--rule_list", help="Use rule list setup", action="store_true", default=False)
     parser.add_argument("-s", "--seed", help="Seed", default=-1, type=int)
-    parser.add_argument("-np", "--not_parallel", help="Do not run in parallel", action='store_true', default=False)
+    parser.add_argument("-np", "--not_parallel", help="Do not run in parallel", action="store_true", default=False)
     parser.add_argument("-p", "--process_number", help="Process number", type=int, default=0)
     parser.add_argument("--silent", help="supress prints", action="store_true", default=False)
     parser.add_argument("--test", "--dry-run", help="Do not save any models", action="store_true", default=False)
-    parser.add_argument("--render_mode", "-rm", help="Render the environment",
-                        type=str, default=None, const="human", nargs='?')
+    parser.add_argument(
+        "--render_mode", "-rm", help="Render the environment", type=str, default=None, const="human", nargs="?"
+    )
 
     args = parser.parse_args()
     if args.seed == -1:
@@ -337,12 +346,12 @@ if __name__ == "__main__":
     USE_GPU = args.gpu  # Applies for 'prolo' only. use gpu? Default false
 
     init_env: gym.Env
-    if ENV_TYPE == 'lunar':
-        init_env = cast(LunarLander, gym.make('LunarLander-v2', render_mode=args.render_mode))
+    if ENV_TYPE == "lunar":
+        init_env = cast(LunarLander, gym.make("LunarLander-v2", render_mode=args.render_mode))
         dim_in = init_env.observation_space.shape[0]  # type: ignore
         dim_out = init_env.action_space.n  # type: ignore[attr-defined]
         env = "LunarLander-v2"
-    elif ENV_TYPE == 'cart':
+    elif ENV_TYPE == "cart":
         init_env = cast(CartPoleEnv, gym.make("CartPole-v1", render_mode=args.render_mode))
         dim_in = init_env.observation_space.shape[0]  # type: ignore
         dim_out = init_env.action_space.n  # type: ignore[attr-defined]
@@ -362,6 +371,6 @@ if __name__ == "__main__":
         lock = mp.Manager().Lock()
         data = Parallel(n_jobs=5, pre_dispatch="all")(
             delayed(start_process)(i, args, init_env, lock) for i in range(5)
-        )
+        )  # fmt: skip
     else:
         data = [start_process(0, args, init_env) for _ in range(5)]

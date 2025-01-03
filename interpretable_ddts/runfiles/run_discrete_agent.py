@@ -21,6 +21,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.tree import plot_tree
 from interpretable_ddts.opt_helpers.sklearn_to_ddt import ddt_init_from_dt
 import matplotlib.pyplot as plt
+
 try:
     from interpretable_ddts.runfiles.sc2_minigame_runner import run_episode as sc_episode
 except ModuleNotFoundError as e:
@@ -38,11 +39,12 @@ RE_PARSE_FILENAME = re.compile(
     r"_v(?P<version>\d+)",
 )
 
+
 class ResultDict(TypedDict):
-    fn : str
-    fuzzy_reward : float      # np.mean(reward_after_five)
-    fuzzy_reward_std : float  # np.std(reward_after_five),
-    discrete_reward : float     # np.mean(crispy_reward)
+    fn: str
+    fuzzy_reward: float  # np.mean(reward_after_five)
+    fuzzy_reward_std: float  # np.std(reward_after_five),
+    discrete_reward: float  # np.mean(crispy_reward)
     discrete_reward_std: float  # np.std(crispy_reward)
     discrete_model: NotRequired[DDTAgent]
 
@@ -64,21 +66,24 @@ def create_gym_env(env: str | gym.Env, *, render_mode=None):
 
 def load_agent(fn: str | Path, bot_name="crispytester"):
     final_deep_actor_fn = os.path.join(MODEL_DIR, fn) if not str(fn).startswith(MODEL_DIR) else fn
-    policy_agent = DDTAgent(bot_name=bot_name,
-                        # Dimensions do not matter as network is replaced
-                        input_dim=2,
-                        output_dim=2)
+    policy_agent = DDTAgent(
+        bot_name=bot_name,
+        # Dimensions do not matter as network is replaced
+        input_dim=2,
+        output_dim=2,
+    )
     policy_agent.load(final_deep_actor_fn, auto_naming=False)
     return policy_agent
+
 
 def search_for_good_model(env, n_jobs=5, verbose=1):
     # Be sure to comment out gym_runner.gym_episode env.render
     max_reward = -float("inf")
     max_std = -float("inf")
-    max_fuzzy_reward = -float('inf')
+    max_fuzzy_reward = -float("inf")
     max_fuzzy_std = -float("inf")
-    best_fn = 'non'
-    best_fuzzy_fn = 'non'
+    best_fn = "non"
+    best_fuzzy_fn = "non"
 
     model_path = Path(MODEL_DIR)
     files = [
@@ -90,6 +95,7 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
     if total == 0:
         print("No results found in", model_path, "subdirs excluded. Exiting...")
         import sys
+
         sys.exit(1)
     if verbose:
         print(f"Found {total} models")
@@ -123,9 +129,7 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
         all_results = cast("list[ResultDict]", all_results_)
     if not verbose:
         print("\n")
-    parsed_filenames = [
-        (RE_PARSE_FILENAME.match(file) or RE_PARSE_FILENAME_OLD.match(file)) for file in filenames
-    ]
+    parsed_filenames = [(RE_PARSE_FILENAME.match(file) or RE_PARSE_FILENAME_OLD.match(file)) for file in filenames]
     if not all(parsed_filenames):
         unparsable_names = [filename for filename, m in zip(filenames, parsed_filenames) if m is None]
         logging.error("Cannot parse filenames: %s", ", ".join(unparsable_names))
@@ -158,6 +162,7 @@ def search_for_good_model(env, n_jobs=5, verbose=1):
         results_df,  # This should be last!
     )
 
+
 def best_model_from_data(results: pd.DataFrame) -> tuple[str, str, float, float, float, float]:
     best_fuzzy_arg = results.fuzzy_reward.idxmax()
     best_arg = results.discrete_reward.idxmax()
@@ -176,6 +181,7 @@ def best_model_from_data(results: pd.DataFrame) -> tuple[str, str, float, float,
         max_reward,
         max_std,
     )  # pyright: ignore[reportReturnType]
+
 
 @overload
 def evaluate_model(
@@ -218,12 +224,12 @@ def evaluate_model(
 ) -> ResultDict | float:
     num_runs = 15
     if env is None:
-        if 'cart' in fn:
-            env = 'cart'
-        elif 'lunar' in fn:
-            env = 'lunar'
-        elif 'FindAndDefeatZerglings' in fn:
-            env = 'FindAndDefeatZerglings'
+        if "cart" in fn:
+            env = "cart"
+        elif "lunar" in fn:
+            env = "lunar"
+        elif "FindAndDefeatZerglings" in fn:
+            env = "FindAndDefeatZerglings"
         else:
             raise ValueError(f"Unknown environment used in {fn}")
 
@@ -270,16 +276,18 @@ def evaluate_model(
             clf.fit(x_train, y_train)
             plt.figure(figsize=(20, 20))
             plot_tree(clf, filled=True)
-            plt.savefig('tree.png')
+            plt.savefig("tree.png")
             init_weights, init_comparators, init_leaves = ddt_init_from_dt(clf)
-            crispy_actor = DDT(input_dim=len(x_train[0]),
-                            output_dim=len(np.unique(y_train)),
-                            weights=init_weights,
-                            comparators=init_comparators,
-                            leaves=init_leaves,
-                            alpha=99999.,
-                            is_value=False,
-                            use_gpu=False)
+            crispy_actor = DDT(
+                input_dim=len(x_train[0]),
+                output_dim=len(np.unique(y_train)),
+                weights=init_weights,
+                comparators=init_comparators,
+                leaves=init_leaves,
+                alpha=99999.0,
+                is_value=False,
+                use_gpu=False,
+            )
         if verbose:
             print("-----------\nCrispy:\n")
 
@@ -340,9 +348,9 @@ def evaluate_model(
     return mean_reward_after_five
 
 
-def fc_state_dict(fn=''):
+def fc_state_dict(fn=""):
     fc_model = torch.load(fn)
-    print(fc_model['actor'])
+    print(fc_model["actor"])
 
 
 def test_model(
@@ -394,12 +402,17 @@ def test_model(
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--discretize", help="train sklearn tree or discretize ddt?", action='store_true')
+    parser.add_argument("-d", "--discretize", help="train sklearn tree or discretize ddt?", action="store_true")
     parser.add_argument("-env", "--env_type", help="FindAndDefeatZerglings, cart, or lunar", type=str, default="cart")
     parser.add_argument("-m", "--model_dir", help="where are models stored?", default="../models", type=str)
     parser.add_argument(
-        "-f", "--find_model", nargs="?", const="DEFAULT", help="find the best models?",
+        "-f",
+        "--find_model",
+        nargs="?",
+        const="DEFAULT",
+        help="find the best models?",
     )
     parser.add_argument(
         "--csv",
@@ -409,12 +422,20 @@ if __name__ == "__main__":
         default="DEFAULT",
     )
     parser.add_argument("-r", "--run_model", help="run a model?", action="store_true")
-    parser.add_argument('-n', '--model_fn', help="model filename for running", type=str, default="")
+    parser.add_argument("-n", "--model_fn", help="model filename for running", type=str, default="")
     parser.add_argument(
-        "-s", "--seed", help="Seed; use -1 for None", type=int, default=12496,
+        "-s",
+        "--seed",
+        help="Seed; use -1 for None",
+        type=int,
+        default=12496,
     )
     parser.add_argument(
-        "-a", "--all", help="Test all models; not only the best", action="store_true", default=False,
+        "-a",
+        "--all",
+        help="Test all models; not only the best",
+        action="store_true",
+        default=False,
     )
     parser.add_argument(
         "-v",
@@ -423,6 +444,7 @@ if __name__ == "__main__":
         action="store_true",
         default="auto",
     )
+    # fmt: off
     parser.add_argument(
         "--silent", help="No output", action="store_true", default=False,
     )
@@ -432,6 +454,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--test", "--dry-run", help="Do not save any outputs", action="store_true", default=False,
     )
+    # fmt: on
 
     args = parser.parse_args()
     if args.seed == -1:
@@ -477,9 +500,7 @@ if __name__ == "__main__":
     # Query df which is the best model
     best_disc_models = {}
     for sub_method in ["leaves", "rules"]:
-        sub_df = results_df[
-            results_df.index.get_level_values("sub-method") == sub_method
-        ]
+        sub_df = results_df[results_df.index.get_level_values("sub-method") == sub_method]
         if len(sub_df) == 0:
             continue
         (
@@ -537,7 +558,8 @@ if __name__ == "__main__":
             print(
                 "\nAll results:\n",
                 results_df[["fn", "test_diff_reward", "test_disc_reward", "test_disc_std"]].sort_values(
-                    "test_disc_reward", ascending=False,
+                    "test_disc_reward",
+                    ascending=False,
                 ),
             )
         else:

@@ -11,8 +11,8 @@ from interpretable_ddts.tools import load_rewards
 
 sns.set_theme()
 
-rewards_dir = Path('txts')
-model_dir = Path('models')
+rewards_dir = Path("txts")
+model_dir = Path("models")
 
 
 version = -1
@@ -37,12 +37,12 @@ def scatter_fuzzy_discrete(df: pd.DataFrame, ax=None, *, max_reward=500, **kwarg
         x="fuzzy_reward",
         y="discrete_reward",
         style="sub-method",
-        #edgecolors="fill",
+        # edgecolors="fill",
         linewidth=0,
         hue="capacity",
         palette="viridis_r",
         alpha=0.5,
-        #size="episode",
+        # size="episode",
         **kwargs,
     )
     min_reward = min(df["fuzzy_reward"].min(), df["discrete_reward"].min(), 0)
@@ -51,6 +51,7 @@ def scatter_fuzzy_discrete(df: pd.DataFrame, ax=None, *, max_reward=500, **kwarg
     ax.set_xlim(min_reward - 10, max_reward + 10)
 
     return fig, ax
+
 
 scatter_fuzzy_discrete(tools.load_output(CART_CSV, aggregate_version="mean"))
 plt.show()
@@ -63,10 +64,7 @@ data = load_rewards(files)
 
 envs = data.index.get_level_values("env").unique()
 
-env_data = {
-    env : data.xs(env, level="env")
-    for env in envs
-}
+env_data = {env: data.xs(env, level="env") for env in envs}
 
 data = pd.DataFrame()
 for method in methods:
@@ -79,15 +77,15 @@ for method in methods:
             pd.MultiIndex.from_tuples([(ENV, method, version)], names=["env", "method", "version"]),
         )
         dfs.append(df)
-    method_df= pd.concat(dfs, axis=0)
+    method_df = pd.concat(dfs, axis=0)
     data = pd.concat([data, method_df], axis=0)
 
 data_grouped = data.groupby("method")
 avg_data: pd.DataFrame = data_grouped.mean()
 # group in bins of 50
-averages_grouped = avg_data.T.groupby(pd.cut(avg_data.columns, bins=1000//50, include_lowest=True)).mean()
+averages_grouped = avg_data.T.groupby(pd.cut(avg_data.columns, bins=1000 // 50, include_lowest=True)).mean()
 errors = data_grouped.std()
-errors_grouped = errors.T.groupby(pd.cut(errors.columns, bins=1000//50, include_lowest=True)).mean()
+errors_grouped = errors.T.groupby(pd.cut(errors.columns, bins=1000 // 50, include_lowest=True)).mean()
 
 # SELECTION = range(0, 1000, 50)
 # data_sel = averages_grouped[SELECTION]
@@ -104,8 +102,8 @@ fig, ax = plt.subplots()
 data_sel.plot(yerr=error_sel, ax=ax, marker="s", linestyle=":")
 for method in methods:
     avg: "pd.Series[float]" = avg_data.T[method]
-    err: "pd.Series[float] "= errors.T[method]
-    ax.fill_between(avg_data.columns, avg - err, avg + err, alpha=0.2 if method =="mlp" else 0.8)  # pyright: ignore[reportArgumentType]
+    err: "pd.Series[float] " = errors.T[method]
+    ax.fill_between(avg_data.columns, avg - err, avg + err, alpha=0.2 if method == "mlp" else 0.8)  # pyright: ignore[reportArgumentType]
 
 
 # Do without averaging

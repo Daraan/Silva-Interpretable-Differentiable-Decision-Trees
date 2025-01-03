@@ -19,9 +19,9 @@ from ray.rllib.algorithms.ppo.ppo import (
 
 logger = logging.getLogger(__name__)
 
-class SilvaLearner(PPOTorchLearner):
 
-    #@override(PPOTorchLearner)
+class SilvaLearner(PPOTorchLearner):
+    # @override(PPOTorchLearner)
     def compute_loss_for_module(
         self,
         *,
@@ -61,23 +61,19 @@ class SilvaLearner(PPOTorchLearner):
             curr_action_dist.logp(batch[Columns.ACTIONS]) - batch[Columns.ACTION_LOGP],
         )
 
-        #action_taken = batch[Columns.ACTIONS]
-        #state = batch[Columns.OBS] # ?
+        # action_taken = batch[Columns.ACTIONS]
+        # state = batch[Columns.OBS] # ?
 
-        entropy_coef = self.entropy_coeff_schedulers_per_module[
-            module_id
-        ].get_current_value()
+        entropy_coef = self.entropy_coeff_schedulers_per_module[module_id].get_current_value()
 
         # Silva
         # Forward pass
-        #new_action_probs = curr_action_dist._dist.probs
-        #update_log_probs = curr_action_dist.logp(action_taken)
-        entropy = (
-            curr_action_dist.entropy().mean().mul(entropy_coef)
-        )  # X: Here mean is taken
+        # new_action_probs = curr_action_dist._dist.probs
+        # update_log_probs = curr_action_dist.logp(action_taken)
+        entropy = curr_action_dist.entropy().mean().mul(entropy_coef)  # X: Here mean is taken
 
-        #action_probs = torch.Tensor([sample['action_prob'] for sample in samples])
-        #action_probs = torch.exp(prev_action_dist.logp(action_taken))
+        # action_probs = torch.Tensor([sample['action_prob'] for sample in samples])
+        # action_probs = torch.exp(prev_action_dist.logp(action_taken))
         # Possible mistake, logit - prob
         # X: Silva uses ratio on probs; rrlib on logits
         # ratio = torch.exp(update_log_probs) - action_probs
@@ -95,8 +91,7 @@ class SilvaLearner(PPOTorchLearner):
         curr_entropy = curr_action_dist.entropy()
         mean_entropy = possibly_masked_mean(curr_entropy)
         scaled_entropy = (
-            entropy_coef
-            * mean_entropy  # X: Silva used mean_entropy instead of current_entropy (PPO)
+            entropy_coef * mean_entropy  # X: Silva used mean_entropy instead of current_entropy (PPO)
         )
 
         # Use negative later
@@ -104,8 +99,7 @@ class SilvaLearner(PPOTorchLearner):
             # Surr1
             batch[Postprocessing.ADVANTAGES] * logp_ratio,
             # Surr2
-            batch[Postprocessing.ADVANTAGES]
-            * torch.clamp(logp_ratio, 1 - config.clip_param, 1 + config.clip_param),
+            batch[Postprocessing.ADVANTAGES] * torch.clamp(logp_ratio, 1 - config.clip_param, 1 + config.clip_param),
         )
         # X Silva uses mean here
 
@@ -115,7 +109,8 @@ class SilvaLearner(PPOTorchLearner):
         if config.use_critic:
             # If embeddings is not None, passes it trough self.vf; batch stays unused; which is equivalent
             value_fn_out = module.compute_values(
-                batch, embeddings=fwd_out.get(Columns.EMBEDDINGS),
+                batch,
+                embeddings=fwd_out.get(Columns.EMBEDDINGS),
             )
             # Silva's model has 2 outputs, one for each action
             # Take value of action taken
@@ -124,7 +119,8 @@ class SilvaLearner(PPOTorchLearner):
                 # If the value network has 2 outputs, take the one corresponding to the action taken
                 if module.vf.output_dim != 1:  # type: ignore[attr-defined]
                     value_fn_out = value_fn_out[
-                        torch.arange(0, len(value_fn_out)), batch[Columns.ACTIONS],
+                        torch.arange(0, len(value_fn_out)),
+                        batch[Columns.ACTIONS],
                     ]
                 reward = batch[Columns.REWARDS]
                 # Squared Error Loss
@@ -164,7 +160,8 @@ class SilvaLearner(PPOTorchLearner):
                 VF_LOSS_KEY: mean_vf_loss,
                 LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY: mean_vf_unclipped_loss,
                 LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY: explained_variance(
-                    batch[Postprocessing.VALUE_TARGETS], value_fn_out,
+                    batch[Postprocessing.VALUE_TARGETS],
+                    value_fn_out,
                 ),
                 ENTROPY_KEY: mean_entropy,
                 LEARNER_RESULTS_KL_KEY: mean_kl_loss,

@@ -14,22 +14,24 @@ from packaging import version
 
 if TYPE_CHECKING:
     from pathlib import Path
+
     LeafInfo = tuple[list[int], list[int], list[float] | float]
 
 
 def save_ddt(fn, model: DDT):
     checkpoint = {}
     mdl_data = {
-        'weights': model.layers,
-        'comparators': model.comparators,
-        'leaf_init_information': model.leaf_init_information,
-        'action_probs': model.action_probs,
-        'alpha': model.alpha,
-        'input_dim': model.input_dim,
-        'is_value': model.is_value,
+        "weights": model.layers,
+        "comparators": model.comparators,
+        "leaf_init_information": model.leaf_init_information,
+        "action_probs": model.action_probs,
+        "alpha": model.alpha,
+        "input_dim": model.input_dim,
+        "is_value": model.is_value,
     }
-    checkpoint['model_data'] = mdl_data
+    checkpoint["model_data"] = mdl_data
     torch.save(checkpoint, fn)
+
 
 def safe_globals():
     # From: https://github.com/innovationcore/transformers/blob/main/src/transformers/trainer.py
@@ -48,6 +50,7 @@ def safe_globals():
         # compat when loading numpy 1
         def _reconstruct(*args, **kwargs):
             return np_core.multiarray._reconstruct(*args, **kwargs)
+
         _reconstruct.__module__ = "numpy.core.multiarray"
         allowlist.append(_reconstruct)
     # numpy >1.25 defines numpy.dtypes.UInt32DType, but below works for
@@ -61,22 +64,24 @@ def safe_globals():
 def load_ddt(fn):
     try:
         with safe_globals():
-            model_checkpoint = torch.load(fn, map_location='cpu', weights_only=True)
+            model_checkpoint = torch.load(fn, map_location="cpu", weights_only=True)
     except RuntimeError:
         logging.error("Exception with file %s", fn)
         raise
-    model_data = model_checkpoint['model_data']
-    init_weights = np.array([weight.detach().clone().data.cpu().numpy() for weight in model_data['weights']])
-    init_comparators = np.array([comp.detach().clone().data.cpu().numpy() for comp in model_data['comparators']])
+    model_data = model_checkpoint["model_data"]
+    init_weights = np.array([weight.detach().clone().data.cpu().numpy() for weight in model_data["weights"]])
+    init_comparators = np.array([comp.detach().clone().data.cpu().numpy() for comp in model_data["comparators"]])
 
-    new_model = DDT(input_dim=model_data['input_dim'],
-                    weights=init_weights,
-                    comparators=init_comparators,
-                    leaves=model_data['leaf_init_information'],
-                    alpha=model_data['alpha'].item(),
-                    is_value=model_data['is_value'])
+    new_model = DDT(
+        input_dim=model_data["input_dim"],
+        weights=init_weights,
+        comparators=init_comparators,
+        leaves=model_data["leaf_init_information"],
+        alpha=model_data["alpha"].item(),
+        is_value=model_data["is_value"],
+    )
     # NOTE: what about output dim?
-    new_model.action_probs = model_data['action_probs']
+    new_model.action_probs = model_data["action_probs"]
     return new_model
 
 
@@ -93,7 +98,6 @@ def init_rule_list(num_rules: int, dim_in: int, dim_out: int):
 
 
 class DDTAgent(AgentBase):
-
     action_network: DDT
     value_network: DDT
 
@@ -111,19 +115,19 @@ class DDTAgent(AgentBase):
         _duplicate=False,
     ):
         # bot_name before calling super
-        self.bot_name = bot_name + '_'
+        self.bot_name = bot_name + "_"
         self.rule_list = rule_list
         self.num_rules = num_rules
         if rule_list:
-            if str(num_rules) + '_rules' not in self.bot_name:
-                self.bot_name += str(num_rules)+'_rules'
+            if str(num_rules) + "_rules" not in self.bot_name:
+                self.bot_name += str(num_rules) + "_rules"
             init_weights, init_comparators, init_leaves = init_rule_list(num_rules, input_dim, output_dim)
         else:
             init_weights = None
             init_comparators = None
             init_leaves = num_rules
-            if str(num_rules) + '_leaves' not in self.bot_name:
-                self.bot_name += str(num_rules) + '_leaves'
+            if str(num_rules) + "_leaves" not in self.bot_name:
+                self.bot_name += str(num_rules) + "_leaves"
         AgentBase.__init__(
             self,
             input_dim,
@@ -162,7 +166,7 @@ class DDTAgent(AgentBase):
         self.last_action_probs = torch.Tensor([0])
         self.last_value_pred = torch.Tensor([[0, 0]])
         self.last_deep_action_probs = None
-        self.last_deep_value_pred = [None]*output_dim
+        self.last_deep_value_pred = [None] * output_dim
         self.full_probs = None
         self.reward_history = []
         self.num_steps = 0
@@ -175,9 +179,7 @@ class DDTAgent(AgentBase):
         self.replay_buffer.insert(
             obs=[self.last_state],
             action_log_probs=self.last_action_probs,
-            value_preds=self.last_value_pred[
-                self.last_action.item()
-            ],  # pyright: ignore[reportArgumentType]  # item() -> Number and not int
+            value_preds=self.last_value_pred[self.last_action.item()],  # pyright: ignore[reportArgumentType]  # item() -> Number and not int
             deeper_action_log_probs=self.last_deep_action_probs,
             deeper_value_pred=self.last_deep_value_pred[  # pyright: ignore[reportArgumentType, reportCallIssue]
                 self.last_action.item()
@@ -189,7 +191,7 @@ class DDTAgent(AgentBase):
         )
         return True
 
-    def save(self, path: Union[Path, str]='last', *, force_save: bool=False):
+    def save(self, path: Union[Path, str] = "last", *, force_save: bool = False):
         """
         The two outputs are saved as two separate files named
 
@@ -201,13 +203,13 @@ class DDTAgent(AgentBase):
         assert self.version is not None
         if not (self.save_output or force_save):
             return
-        act_fn = str(path) + self.bot_name + '_actor' + f'_v{self.version}.pth.tar'
+        act_fn = str(path) + self.bot_name + "_actor" + f"_v{self.version}.pth.tar"
         val_fn = str(path) + self.bot_name + "_critic" + f"_v{self.version}.pth.tar"
 
         save_ddt(act_fn, self.action_network)
         save_ddt(val_fn, self.value_network)
 
-    def load(self, fn: str | Path ='last', *, version=None, auto_naming=True):
+    def load(self, fn: str | Path = "last", *, version=None, auto_naming=True):
         """
         Replaced the action and value network of the agent
 
@@ -218,29 +220,29 @@ class DDTAgent(AgentBase):
         """
         if auto_naming:
             assert version is not None
-            act_fn = str(fn) + self.bot_name + '_actor' + f'_v{version}.pth.tar'
-            val_fn = str(fn) + self.bot_name + '_critic' + f'_v{version}.pth.tar'
+            act_fn = str(fn) + self.bot_name + "_actor" + f"_v{version}.pth.tar"
+            val_fn = str(fn) + self.bot_name + "_critic" + f"_v{version}.pth.tar"
         else:
             act_fn = str(fn)
             assert "_actor" in act_fn
             val_fn = act_fn.replace("_actor", "_critic")
         if os.path.exists(act_fn):
             self.action_network = load_ddt(act_fn)  # type: ignore[assignment]
-            self.value_network = load_ddt(val_fn)   # type: ignore[assignment]
+            self.value_network = load_ddt(val_fn)  # type: ignore[assignment]
         else:
             msg = f"No such file or directory:' {act_fn}'"
             raise FileNotFoundError(msg)
 
     def __getstate__X(self):
         return {
-            'action_network': self.action_network,
-            'value_network': self.value_network,
-            'ppo': self.ppo,
-            'bot_name': self.bot_name,
-            'rule_list': self.rule_list,
-            'output_dim': self.output_dim,
-            'input_dim': self.input_dim,
-            'num_rules': self.num_rules,
+            "action_network": self.action_network,
+            "value_network": self.value_network,
+            "ppo": self.ppo,
+            "bot_name": self.bot_name,
+            "rule_list": self.rule_list,
+            "output_dim": self.output_dim,
+            "input_dim": self.input_dim,
+            "num_rules": self.num_rules,
         }
 
     def __setstate__X(self, state):
@@ -250,27 +252,33 @@ class DDTAgent(AgentBase):
     @AgentBase.skip_if_no_output
     def _write_hparams(self):
         if self.save_output:
-            self.rewards_file.open("w").write(", ".join([  # type: ignore[attribute]
-                f"name: {self.bot_name}",
-                "method: ddt",
-                f"version: {self.version}",
-                f"input_dim: {self.input_dim}",
-                f"output_dim: {self.output_dim}",
-                f"num_rules: {self.num_rules}",
-                f"rule_list: {self.rule_list}",
-            ]) + "\n")
+            self.rewards_file.open("w").write(  # type: ignore[attribute]
+                ", ".join(
+                    [
+                        f"name: {self.bot_name}",
+                        "method: ddt",
+                        f"version: {self.version}",
+                        f"input_dim: {self.input_dim}",
+                        f"output_dim: {self.output_dim}",
+                        f"num_rules: {self.num_rules}",
+                        f"rule_list: {self.rule_list}",
+                    ]
+                )
+                + "\n"
+            )
 
     def duplicate(self, *, discrete=False):
-        new_agent = self.__class__(bot_name=self.bot_name.rstrip('_'),
-                             input_dim=self.input_dim,
-                             output_dim=self.output_dim,
-                             rule_list=self.rule_list,
-                             num_rules=self.num_rules,
-                             version=self.version,
-                             save_output=self.save_output,
-                             _duplicate=True,
-                             use_gpu=False,  # <-----
-                             )
+        new_agent = self.__class__(
+            bot_name=self.bot_name.rstrip("_"),
+            input_dim=self.input_dim,
+            output_dim=self.output_dim,
+            rule_list=self.rule_list,
+            num_rules=self.num_rules,
+            version=self.version,
+            save_output=self.save_output,
+            _duplicate=True,
+            use_gpu=False,  # <-----
+        )
         # NOTE: networks are still shared!
         new_agent.__setstate__X(self.__getstate__X())
         if not discrete:

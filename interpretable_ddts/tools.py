@@ -9,12 +9,14 @@ import random
 import numpy as np
 import torch
 import torch.cuda
+
 if TYPE_CHECKING:
     from pandas._typing import AggFuncTypeBase
 
 import gymnasium as gym
 
 from packaging.version import parse as parse_version, Version
+
 GYM_VERSION = parse_version(gym.__version__)
 
 GYM_VERSION = parse_version(gym.__version__)
@@ -24,7 +26,7 @@ GYM_V1 = GYM_VERSION >= Version("1.0.0")
 
 RE_PARSE_FILENAME = re.compile(
     r"(?P<parent_dir>.+/)?"  # likely for model files
-    r"(?:(?P<episode>\d+)th)?"        # model files only
+    r"(?:(?P<episode>\d+)th)?"  # model files only
     r"(?P<method>ddt|mlp)"
     r"(?P<env>[^_]+?)(?P<GPU>GPU)?"
     r"_(?P<features>(?P<num>\d+)_(?P<typ>[^_]+))"
@@ -42,11 +44,13 @@ RE_PARSE_FILENAME_OLD = re.compile(
     r"(?:_v(?P<version>\d+))?",  # no version in old format
 )
 
+
 def match_filename(filename: str) -> "re.Match[str] | None":
     result = RE_PARSE_FILENAME.match(filename)
     if result is None:
         result = RE_PARSE_FILENAME_OLD.match(filename)
     return result
+
 
 def parse_filename(filename: Union[str, Path]):
     if isinstance(filename, Path):
@@ -94,7 +98,7 @@ def load_output(
     file: Union[str, Path],
     index=("env", "method", "sub-method", "capacity", "GPU", "version"),
     aggregate_version: Optional[Literal["max", "mean"] | AggFuncTypeBase] = None,
-    aggregate_column: str="discrete_reward",
+    aggregate_column: str = "discrete_reward",
     **kwargs,
 ):
     df = pd.read_csv(file, index_col=index, **kwargs)
@@ -104,9 +108,11 @@ def load_output(
     if isinstance(aggregate_version, (str, list, Iterable)) and "mean" in aggregate_version:
         df_2 = df_2.drop(columns=["fn"])
     agg_df = (  # noqa: RET504
-        df_2.groupby(list(index)).aggregate(
+        df_2.groupby(list(index))
+        .aggregate(
             aggregate_version,
-        ).sort_values(aggregate_column, ascending=False)
+        )
+        .sort_values(aggregate_column, ascending=False)
     )
     return agg_df
 
@@ -120,9 +126,7 @@ def create_single_index(header: dict[str, str]):
             int(header["num"]),
             bool(header["GPU"]),
             int(
-                header.get("version", 99)
-                if header.get("version", 99) is not None
-                else 99,
+                header.get("version", 99) if header.get("version", 99) is not None else 99,
             ),  # no version in old format
             int(header["episode"]),
         ),
@@ -148,9 +152,7 @@ def create_df_index(metadata: Iterable[dict[str, str]]):
                 int(header["num"]),
                 bool(header["GPU"]),
                 int(
-                    header.get("version", 99)
-                    if header.get("version", 99) is not None
-                    else 99,
+                    header.get("version", 99) if header.get("version", 99) is not None else 99,
                 ),  # no version in old format
                 int(header["episode"]),
             )
@@ -171,14 +173,17 @@ def create_df_index(metadata: Iterable[dict[str, str]]):
 @overload
 def _split_seed(seed: None) -> tuple[None, None]: ...
 
+
 @overload
 def _split_seed(seed: int) -> tuple[int, int]: ...
+
 
 def _split_seed(seed: Optional[int]) -> tuple[int, int] | tuple[None, None]:
     if seed is None:
         return None, None
     gen = random.Random(seed)
     return gen.randrange(2**32), gen.randrange(2**32)
+
 
 def seed_everything(env, seed: Optional[int], *, torch_manual=False):
     """
@@ -213,6 +218,7 @@ def seed_everything(env, seed: Optional[int], *, torch_manual=False):
 
     seed, next_seed = _split_seed(next_seed)
     return seed, next_seed
+
 
 RUN_MIN_LENGTH = 1000
 """Amounts will lower lines are considered incomplete"""

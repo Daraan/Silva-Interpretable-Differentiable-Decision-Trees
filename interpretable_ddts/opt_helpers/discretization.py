@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from interpretable_ddts.agents.ddt import DDT
 
+
 def convert_to_discrete(fuzzy_model: "DDT", *, preserve_actions: bool = True) -> "DDT":
     new_weights = []
     new_comps = []
@@ -24,14 +25,16 @@ def convert_to_discrete(fuzzy_model: "DDT", *, preserve_actions: bool = True) ->
     new_input_dim = fuzzy_model.input_dim
     new_weights = np.array(new_weights)
     new_comps = np.array(new_comps)
-    crispy_model = DDT(input_dim=new_input_dim,
-                       output_dim=fuzzy_model.output_dim,
-                       weights=new_weights,
-                       comparators=new_comps,
-                       leaves=fuzzy_model.leaf_init_information,
-                       alpha=99999.,
-                       is_value=fuzzy_model.is_value,
-                       use_gpu=fuzzy_model.use_gpu)
+    crispy_model = DDT(
+        input_dim=new_input_dim,
+        output_dim=fuzzy_model.output_dim,
+        weights=new_weights,
+        comparators=new_comps,
+        leaves=fuzzy_model.leaf_init_information,
+        alpha=99999.0,
+        is_value=fuzzy_model.is_value,
+        use_gpu=fuzzy_model.use_gpu,
+    )
 
     # XXX: Are both needed should this be a hyperparameter?
     # For a ddt that preserves actions using softmaxes, use old action probs

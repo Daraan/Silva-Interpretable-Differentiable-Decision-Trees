@@ -15,9 +15,8 @@ if TYPE_CHECKING:
 
 
 class AgentBase:
-
-    bot_name : str
-    _duplicate : bool
+    bot_name: str
+    _duplicate: bool
 
     action_network: BaselineFCNet | DDT
     value_network: BaselineFCNet | DDT
@@ -29,6 +28,7 @@ class AgentBase:
             if not self.save_output:
                 return None
             return func(self, *args, **kwargs)
+
         return wrapper
 
     def __init__(self, input_dim=4, output_dim=2, *, version: int | None, save_output: bool, _duplicate: bool):
@@ -48,8 +48,8 @@ class AgentBase:
 
         # Not set attributes
         self.replay_buffer: replay_buffer.ReplayBufferSingleAgent
-        self.num_steps : int
-        self.reward_history : list[int]
+        self.num_steps: int
+        self.reward_history: list[int]
         self.ppo: ppo_update.PPO
 
     def _check_version(self) -> int:
@@ -59,9 +59,7 @@ class AgentBase:
         rewards_file = rewards_path / (self.bot_name + "_v0_rewards.txt")
         if rewards_file.exists():
             files = list(rewards_path.glob(f"{self.bot_name}_v*"))
-            latest = sorted(int(str(f).split("_v")[-1].split("_")[0]) for f in files)[
-                -1
-            ]
+            latest = sorted(int(str(f).split("_v")[-1].split("_")[0]) for f in files)[-1]
             self.version = latest + 1
         else:
             self.version = 0
@@ -84,9 +82,7 @@ class AgentBase:
         if self.rewards_file:
             return
         txts_path = Path("../txts")
-        rewards_file = txts_path / (
-            self.bot_name + f"_v{self.version}" + "_rewards.txt"
-        )
+        rewards_file = txts_path / (self.bot_name + f"_v{self.version}" + "_rewards.txt")
         self.rewards_file = rewards_file
         txts_path.mkdir(parents=True, exist_ok=True)
         # File might was created in parallel
@@ -99,10 +95,9 @@ class AgentBase:
     def save_reward(self, reward: float | SupportsFloat):
         raise NotImplementedError
 
-    def save(self, path: Path | str):
-        ...
+    def save(self, path: Path | str): ...
 
-    def get_action(self, observation, max_inputs:int = 10):
+    def get_action(self, observation, max_inputs: int = 10):
         with torch.no_grad():
             obs = torch.Tensor(observation)
             obs = obs.view(1, -1)

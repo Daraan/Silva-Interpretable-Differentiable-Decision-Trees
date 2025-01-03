@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 
 class PPO:
     def __init__(self, actor_critic_arr, *, two_nets=True, use_gpu=False):
-
         lr = 1e-3
         eps = 1e-5
         self.clip_param = 0.2
@@ -64,7 +63,8 @@ class PPO:
             adv_targ = torch.Tensor([sample["advantage"] for sample in samples])
             reward = torch.Tensor([sample["reward"] for sample in samples])
             old_action_probs = torch.cat(
-                [sample["full_prob_vector"].unsqueeze(0) for sample in samples], dim=0,
+                [sample["full_prob_vector"].unsqueeze(0) for sample in samples],
+                dim=0,
             )
             if (
                 True in np.array(np.isnan(adv_targ).tolist())
@@ -95,10 +95,7 @@ class PPO:
             # ratio = torch.exp(update_log_probs - action_probs)
             ratio = torch.exp(update_log_probs) - action_probs
             surr1 = ratio * adv_targ
-            surr2 = (
-                torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param)
-                * adv_targ
-            )
+            surr2 = torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
             action_loss = -torch.min(surr1, surr2).mean()
             # Policy Gradient:
             # action_loss = (torch.sum(torch.mul(update_log_probs, adv_targ).mul(-1), -1))

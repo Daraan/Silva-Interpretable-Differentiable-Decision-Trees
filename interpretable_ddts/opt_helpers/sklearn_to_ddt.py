@@ -18,7 +18,7 @@ def ddt_init_from_dt(estimator):
         node_id, parent_depth, parent_node_id, right_child = stack.pop()
         node_depth[node_id] = parent_depth + 1
         master_list.append([node_id, parent_node_id, right_child])
-        if (children_left[node_id] != children_right[node_id]):
+        if children_left[node_id] != children_right[node_id]:
             stack.append((children_left[node_id], parent_depth + 1, node_id, False))
             stack.append((children_right[node_id], parent_depth + 1, node_id, True))
         else:
@@ -32,7 +32,7 @@ def ddt_init_from_dt(estimator):
     for i in range(n_nodes):
         if is_leaves[i]:
             probs = np.zeros(estimator.n_classes_)
-            probs[np.argmax(estimator.tree_.value[i])] = 1.
+            probs[np.argmax(estimator.tree_.value[i])] = 1.0
             new_leaf = [[], [], probs]
             current_id = i
             while current_id != 0:
@@ -48,7 +48,7 @@ def ddt_init_from_dt(estimator):
         else:
             init_weight = np.zeros(num_feats)
 
-            init_weight[feature[i]] = -1.
+            init_weight[feature[i]] = -1.0
             init_weights.append(init_weight)
             init_comparators.append([-threshold[i]])
 

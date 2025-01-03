@@ -1,5 +1,5 @@
 [tool.black]
-line-length = 110
+line-length = 120
 target-version = ['py39', 'py310', 'py311']
 include = '\.pyi?$'
 exclude = '''
@@ -89,5 +89,13 @@ exclude = [
     ".tox",
     ".venv",
     "build",
-    "dist"
+    "dist",
+    "sc[2_]*",  # ignore StarCraft files
+]
+
+[tool.ruff.format]
+  docstring-code-format = true
+  exclude = [
+    ".git",
+    "sc[2_]*",  # ignore StarCraft files
 ]
