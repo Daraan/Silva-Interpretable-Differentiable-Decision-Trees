@@ -35,9 +35,8 @@ from ray.tune.logger import (  # noqa: F401
 from interpretable_ddts.agents.ddt_catalog import DDTCatalog
 from interpretable_ddts.agents.ddt_ppo_module import DDTModule
 from interpretable_ddts.agents.ppo_learner import SilvaLearner
+from interpretable_ddts.tools import is_pbar
 
-if TYPE_CHECKING:
-    from tqdm import tqdm
 
 os.environ["RAY_COLOR_PREFIX"] = "1"
 
@@ -139,8 +138,6 @@ def create_ddt_config(
         action_space=init_env.action_space,
         model_config={
             "bot_name": args.agent_type + args.env_type,
-            "input_dim": dim_in,
-            "output_dim": dim_out,
             "rule_list": args.rule_list,
             "num_rules": args.num_leaves,
             "save_output": not args.test,
@@ -241,22 +238,15 @@ if __name__ == "__main__":
 
     if args.seed == -1:
         args.seed = None
-
     if args.env_type == "lunar":
         init_env = gym.make("LunarLander-v2")
-        dim_in = init_env.observation_space.shape[0]  # pyright: ignore[reportOptionalSubscript]
-        dim_out = init_env.action_space.n  # type: ignore[attr-defined]
-        env = "LunarLander-v2"
     elif args.env_type == "cart":
         init_env = gym.make("CartPole-v1")
-        dim_in = init_env.observation_space.shape[0]  # pyright: ignore[reportOptionalSubscript]
-        dim_out = init_env.action_space.n  # type: ignore[attr-defined]
-        env = "CartPole-v1"
     else:
         raise ValueError(f"No valid environment {args.env_type}")
-    dim_int, dim_out = int(dim_in), int(dim_out)  # might be np
+    env_name = init_env.unwrapped.spec.id  # pyright: ignore[reportOptionalMemberAccess]
 
-    config, module_spec = create_ddt_config(args, env)
+    config, module_spec = create_ddt_config(args, init_env)
 
     def build_and_train(index: Optional[int | dict[str, Any]] = None, *, use_pbar=True):
         """
@@ -266,7 +256,7 @@ if __name__ == "__main__":
         Warning:
             Best practice is to not refer to any objects from outer scope in the training_function
         """
-        config, _ = create_ddt_config(args, env)
+        config, _ = create_ddt_config(args, env_name)
         algo = config.build()
 
         if use_pbar:
@@ -303,10 +293,8 @@ if __name__ == "__main__":
             train.report(metrics)
 
             # Update progress bar
-            if not use_pbar:
+            if not is_pbar(pbar):
                 continue
-            if TYPE_CHECKING:
-                assert isinstance(pbar, (tqdm_ray.tqdm, tqdm))
             try:
                 pbar.set_description(
                     f"R mean: {metrics[TRAIN_METRIC_RETURN_MEAN]:>6.1f} |"
@@ -355,8 +343,9 @@ if __name__ == "__main__":
                 num_hidden=args.num_hidden,
                 use_pbar=tqdm_ray.tqdm,
                 episodes=args.episodes,
-                dim_in=dim_in,
-                dim_out=dim_out,
+                # Note: cast to int as it might be an np.int type
+                dim_in=int(init_env.observation_space.shape[0]),  # pyright: ignore[reportOptionalSubscript],
+                dim_out=int(init_env.action_space.n),  # type: ignore[attr-defined],
                 render_mode=None,
             ),
         )

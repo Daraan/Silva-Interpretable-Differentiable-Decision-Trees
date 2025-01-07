@@ -3,15 +3,18 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import re
-from typing import Iterable, Literal, Union, Optional, TYPE_CHECKING, overload
+from typing import Iterable, Literal, TypeVar, Union, Optional, TYPE_CHECKING, overload
 import pandas as pd
 import random
 import numpy as np
 import torch
 import torch.cuda
+from tqdm import tqdm
+from ray.experimental import tqdm_ray
 
 if TYPE_CHECKING:
     from pandas._typing import AggFuncTypeBase
+    from typing_extensions import TypeIs
 
 import gymnasium as gym
 
@@ -219,6 +222,15 @@ def seed_everything(env, seed: Optional[int], *, torch_manual=False):
     seed, next_seed = _split_seed(next_seed)
     return seed, next_seed
 
+
+_T = TypeVar("_T")
+
+
+def is_pbar(pbar: Iterable[_T]) -> TypeIs[tqdm_ray.tqdm | tqdm[_T]]:
+    return isinstance(pbar, (tqdm_ray.tqdm, tqdm))
+
+
+# ----
 
 RUN_MIN_LENGTH = 1000
 """Amounts will lower lines are considered incomplete"""
