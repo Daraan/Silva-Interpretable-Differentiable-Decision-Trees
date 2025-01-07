@@ -248,7 +248,7 @@ if __name__ == "__main__":
 
     config, module_spec = create_ddt_config(args, init_env)
 
-    def build_and_train(index: Optional[int | dict[str, Any]] = None, *, use_pbar=True):
+    def build_and_train(index: Optional[int | dict[str, Any]] = None, *, use_pbar=True, disable_report=False):
         """
         Args:
             index: Is a `dict` / `param_spec` if this is used by Tune.
@@ -290,7 +290,8 @@ if __name__ == "__main__":
                 EVAL_METRIC_RETURN_MEAN: eval_mean,
             }
             # Report metrics
-            train.report(metrics)
+            if not disable_report:
+                train.report(metrics)
 
             # Update progress bar
             if not is_pbar(pbar):
@@ -405,10 +406,11 @@ if __name__ == "__main__":
     # ))
     # Use tune.with_parameters to pass large objects to the trainable
     if args.test and args.not_parallel:
-        result = build_and_train()
+        # will spew some warnings about train.report
+        result = build_and_train(disable_report=True)
         sys.exit()
 
-    tune.Tuner(
+    tuner = tune.Tuner(
         trainable,  # Note: possibly can also be a list
         # "PPO",
         # run_config=air.RunConfig(stop={"training_iteration": 1}),
@@ -432,4 +434,5 @@ if __name__ == "__main__":
             # Use fail_fast for during debugging/testing to stop all experiments
             failure_config=train.FailureConfig(fail_fast=True),
         ),
-    ).fit()
+    )
+    results = tuner.fit()
