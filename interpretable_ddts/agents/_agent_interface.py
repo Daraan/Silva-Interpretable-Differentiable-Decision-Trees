@@ -98,6 +98,7 @@ class AgentBase:
     def save(self, path: Path | str): ...
 
     def get_action(self, observation, max_inputs: int = 10):
+        is_discrete = hasattr(self, "is_discrete") and self.is_discrete
         with torch.no_grad():
             obs = torch.Tensor(observation)
             obs = obs.view(1, -1)
@@ -106,16 +107,19 @@ class AgentBase:
             probs = self.action_network(obs)
             value_pred = self.value_network(obs)
             probs = probs.view(-1).cpu()
-            self.full_probs = probs
-            if self.action_network.input_dim > max_inputs:
+            if is_discrete:
+                # Use argmax for discrete actions
+                probs = torch.zeros_like(probs).scatter(0, probs.argmax(), 1)
+            elif self.action_network.input_dim > max_inputs:
                 probs, inds = torch.topk(probs, 3)
+            self.full_probs = probs
             m = Categorical(probs)
             action = m.sample()
             log_probs = m.log_prob(action)
             self.last_action_probs = log_probs.cpu()
             self.last_value_pred = value_pred.view(-1).cpu()
 
-            if self.action_network.input_dim > max_inputs:
+            if not is_discrete and self.action_network.input_dim > max_inputs:
                 self.last_action = inds[action].cpu()  # pyright: ignore[reportPossiblyUnboundVariable]
             else:
                 self.last_action = action.cpu()
