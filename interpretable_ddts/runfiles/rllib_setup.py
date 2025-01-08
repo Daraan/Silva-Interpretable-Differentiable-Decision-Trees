@@ -7,7 +7,7 @@ import os
 from functools import partial
 from pathlib import Path
 import sys
-from typing import TYPE_CHECKING, Any, Optional, TypeVar
+from typing import Any, Optional, TypeVar
 
 import gymnasium as gym
 import ray
@@ -333,14 +333,9 @@ if __name__ == "__main__":
     # note config will be passed as first positional argument
     if False:
         from interpretable_ddts.runfiles import gym_runner
-        from interpretable_ddts.agents.ddt_ppo_module import DDTModuleGymRunner
+        from interpretable_ddts.agents.ddt_ppo_module import LegacyDDTModule
 
-        module_spec.module_class = DDTModuleGymRunner
-        module_spec.model_config.update(
-            {
-                "save_output": False,
-            }
-        )
+        module_spec.module_class = LegacyDDTModule
         module_spec.model_config.update(
             {
                 "save_output": not args.test,

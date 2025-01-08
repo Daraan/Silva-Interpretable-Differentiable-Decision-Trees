@@ -212,10 +212,10 @@ def main(
 def create_rlib_agent(args, init_env: gym.Env):
     from ray.rllib.core.rl_module.rl_module import RLModuleSpec  # noqa: F811
     from interpretable_ddts.agents.ddt_catalog import DDTCatalog  # noqa: F811
-    from interpretable_ddts.agents.ddt_ppo_module import DDTModuleGymRunner  # noqa: F811
+    from interpretable_ddts.agents.ddt_ppo_module import LegacyDDTModule  # noqa: F811
 
     module_spec = RLModuleSpec(
-        module_class=DDTModuleGymRunner,
+        module_class=LegacyDDTModule,
         observation_space=init_env.observation_space,
         action_space=init_env.action_space,
         model_config={
@@ -231,7 +231,7 @@ def create_rlib_agent(args, init_env: gym.Env):
         },
         catalog_class=DDTCatalog,
     )
-    policy_agent: DDTModuleGymRunner = cast(DDTModuleGymRunner, module_spec.build())
+    policy_agent: LegacyDDTModule = cast(LegacyDDTModule, module_spec.build())
     policy_agent.setup()
     return policy_agent
 
@@ -244,7 +244,9 @@ def start_process(
 ):
     """Wrapper of main that can be used in parallel."""
     agent_type: "str | RLModuleSpec" = args.agent_type
-    env_type: str = args.env_type
+    env_type: str | gym.Env = args.env_type
+    if not isinstance(env_type, str):
+        env_type = env_type.unwrapped.spec.id
     seed: Optional[int] = args.seed
     # Initialize with different seed
     if isinstance(i, int):

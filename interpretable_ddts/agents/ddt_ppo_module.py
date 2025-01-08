@@ -62,6 +62,8 @@ class DDTModule(PPOTorchRLModule):
     config: RLModuleConfig
     model_config: Optional[ModelConfigDict]
 
+    CAN_USE_DISCRETE_EVAL = True
+
     def __init__(
         self,
         config: RLModuleConfig = DEPRECATED_VALUE,  # type: ignore[arg-type]  # use -1 here to avoid errors
@@ -143,6 +145,7 @@ class DDTModule(PPOTorchRLModule):
         self.vf = self.__value_network
         self.pi = self.__action_network
 
+        self.is_discrete = False
         self._max_inputs = 10
 
     def encoder(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
@@ -154,11 +157,7 @@ class DDTModule(PPOTorchRLModule):
             ENCODER_OUT: {
                 ACTOR: inputs,
                 # Add critic from value network
-                **(
-                   {}
-                   if self.config.inference_only
-                   else {CRITIC: inputs}
-                ),
+                **({} if self.config.inference_only else {CRITIC: inputs}),
             },
         }
 
@@ -175,7 +174,7 @@ class DDTModule(PPOTorchRLModule):
             self.is_discrete = False
 
 
-class DDTModuleGymRunner(DDTModule, AgentBase):
+class LegacyDDTModule(DDTModule, AgentBase):
     """
     Version of the DDTModule that is used by gym_runner.py
     it is compatible with the AgentBase interface
@@ -220,6 +219,13 @@ class DDTModuleGymRunner(DDTModule, AgentBase):
         pass
 
     def duplicate(self, *, discrete=False):
+        """
+        Creates a **shallow** duplicate of the agent with identical(!) networks, however
+        with a new replay buffer.
+
+        Args:
+            discrete: If True, the new agent will have a discrete copy of the networks.
+        """
         # from copy import deepcopy
         # new_agent = deepcopy(self)
         new_agent = self.__class__(
@@ -230,12 +236,15 @@ class DDTModuleGymRunner(DDTModule, AgentBase):
             model_config=self.model_config,
             catalog_class=self.catalog.__class__,
         )
-        new_agent.setup(duplicate=True)  # this sets pi, vf and ppo
-        # copy weights
+        new_agent.setup(duplicate=True)  # this creates pi, vf and ppo; adjust afterwards!
+        # NOTE: Networks are shared!
         if discrete:
             new_agent.pi = self.pi.create_discrete_copy()
-            new_agent.vf = self.vf.create_discrete_copy()
+            new_agent.vf = (
+                self.vf.create_discrete_copy()
+            )  # TODO: this should be based on pi!; check if really necessary
             new_agent.ppo = ppo_update.PPO([new_agent.pi, new_agent.vf], two_nets=True, use_gpu=False)
+            new_agent.is_discrete = True
         else:
             new_agent.pi = self.pi
             new_agent.vf = self.vf
