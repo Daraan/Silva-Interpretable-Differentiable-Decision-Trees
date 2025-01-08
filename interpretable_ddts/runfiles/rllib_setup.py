@@ -35,6 +35,7 @@ from ray.tune.logger import (  # noqa: F401
 from interpretable_ddts.agents.ddt_catalog import DDTCatalog
 from interpretable_ddts.agents.ddt_ppo_module import DDTModule
 from interpretable_ddts.agents.ppo_learner import SilvaLearner
+from interpretable_ddts.agents.rllib_port.discrete_evaluation import eval_with_discrete
 from interpretable_ddts.tools import is_pbar
 
 
@@ -45,6 +46,7 @@ RAY_VERSION = parse_version(ray.__version__)
 # Keys
 TRAIN_METRIC_RETURN_MEAN = ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
 EVAL_METRIC_RETURN_MEAN = EVALUATION_RESULTS + "/" + ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
+DISC_EVAL_METRIC_RETURN_MEAN = EVALUATION_RESULTS + "/discrete/" + ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +157,7 @@ def create_ddt_config(
     )
     # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.evaluation.html
     config.evaluation(
+        custom_evaluation_function=eval_with_discrete,
         evaluation_interval=10,
         evaluation_duration=5,
         evaluation_duration_unit="episodes",
@@ -264,16 +267,19 @@ if __name__ == "__main__":
         else:
             pbar = range(args.episodes)
         running_eval_rewards = []
+        running_disc_eval_rewards = []
         running_rewards = []
         for _episode in pbar:
             result = algo.train()
             # Results
+            # Training:
             train_reward = result[ENV_RUNNER_RESULTS].get(EPISODE_RETURN_MEAN, float("nan"))
             if not math.isnan(train_reward):
                 running_rewards.append(train_reward)
             running_reward = sum(running_rewards[-100:]) / (
                 min(100, len(running_rewards)) or float("nan")  # nan for 0
             )
+            # Evaluation:
             eval_results = result.get(EVALUATION_RESULTS, {})
             eval_env_runner_results = eval_results.get(ENV_RUNNER_RESULTS, {})
             eval_mean = eval_env_runner_results.get(EPISODE_RETURN_MEAN, float("nan"))
@@ -282,12 +288,23 @@ if __name__ == "__main__":
             running_eval_reward = sum(running_eval_rewards[-100:]) / (
                 min(100, len(running_eval_rewards)) or float("nan")  # nan for 0
             )
+            # Discrete rewards:
+            discrete_evaluation = eval_results.get("discrete", {})
+            disc_eval_env_runner_results = discrete_evaluation.get(ENV_RUNNER_RESULTS, {})
+            disc_eval_mean = disc_eval_env_runner_results.get(EPISODE_RETURN_MEAN, float("nan"))
+            if not math.isnan(disc_eval_mean):
+                running_disc_eval_rewards.append(disc_eval_mean)
+            disc_running_eval_reward = sum(running_disc_eval_rewards[-100:]) / (
+                min(100, len(running_disc_eval_rewards)) or float("nan")  # nan for 0
+            )
+
             metrics = {
                 TRAIN_METRIC_RETURN_MEAN: result[ENV_RUNNER_RESULTS].get(
                     EPISODE_RETURN_MEAN,
                     float("nan"),
                 ),
                 EVAL_METRIC_RETURN_MEAN: eval_mean,
+                DISC_EVAL_METRIC_RETURN_MEAN: disc_eval_mean,
             }
             # Report metrics
             if not disable_report:
@@ -302,7 +319,9 @@ if __name__ == "__main__":
                     f"R max: {result['env_runners']['episode_return_max']:>4.0f} |"
                     f"R roll: {running_reward:>6.1f} |"
                     f"Eval Rew: {eval_mean:>6.1f} |"
-                    f"Rolling Eval Rew: {running_eval_reward:>6.1f} |",
+                    f"Roll Eval Rew: {running_eval_reward:>6.1f} |"
+                    f"Disc Eval Rew: {disc_eval_mean:>6.1f} |"
+                    f"Roll Disc Rew: {disc_running_eval_reward:>6.1f} |"
                 )
             except KeyError as e:
                 print("Error with Key", e)

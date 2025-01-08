@@ -162,6 +162,18 @@ class DDTModule(PPOTorchRLModule):
             },
         }
 
+    def switch_mode(self, *, discrete: bool):
+        if discrete and self.is_discrete:
+            self.pi = self.__action_network.create_discrete_copy()
+            self.vf = self.__value_network.create_discrete_copy()
+            self.pi.eval()
+            self.vf.eval()
+            self.is_discrete = True
+        elif not discrete and not self.is_discrete:
+            self.pi = self.__action_network
+            self.vf = self.__value_network
+            self.is_discrete = False
+
 
 class DDTModuleGymRunner(DDTModule, AgentBase):
     """
