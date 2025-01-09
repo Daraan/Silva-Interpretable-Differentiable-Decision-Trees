@@ -171,15 +171,21 @@ if __name__ == "__main__":
                 save_checkpoints=False,
                 tags=tags,
                 # Other keywords see: https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment/
-                auto_metric_step_rate=10,  # How often batch metrics are logged
+                auto_metric_step_rate=10,  # How often batch metrics are logged. Default 10
+                auto_histogram_epoch_rate=1,  # How often histograms are logged. Default 1
                 log_git_metadata=True,  # disabled by rllib
-                log_graph=True,  # Default True
-                # api_key=,
+                log_graph=False,  # computation graph, Default True
                 log_env_details=True,
+                # Subkeys of env details:
+                log_env_network=False,
+                log_env_disk=False,
+                log_env_gpu=False,
+                log_env_host=False,
+                # ---
                 auto_log_co2=False,  # needs codecarbon
-                auto_histogram_weight_logging=True,  # Default False
-                auto_histogram_gradient_logging=True,  # Default False
-                auto_histogram_activation_logging=True,  # Default False
+                auto_histogram_weight_logging=False,  # Default False
+                auto_histogram_gradient_logging=False,  # Default False
+                auto_histogram_activation_logging=False,  # Default False
             ),
         )
     # Will use these resources per job
