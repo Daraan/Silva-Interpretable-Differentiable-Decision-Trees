@@ -11,7 +11,7 @@ import tempfile
 from interpretable_ddts.agents.ddt_catalog import DDTCatalog
 from interpretable_ddts.agents.ddt_ppo_module import DDTModule
 from interpretable_ddts.agents.ppo_learner import SilvaLearner
-from interpretable_ddts.agents.rllib_port.discrete_evaluation import eval_with_discrete
+from interpretable_ddts.agents.rllib_port.discrete_evaluation import DiscreteEvalCallback
 from interpretable_ddts.runfiles._pbar_updates import update_pbar
 from interpretable_ddts.runfiles.constants import (
     DISC_EVAL_METRIC_RETURN_MEAN,
@@ -146,7 +146,6 @@ def create_ddt_config(
     )
     # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.evaluation.html
     config.evaluation(
-        custom_evaluation_function=eval_with_discrete,
         evaluation_interval=10,
         evaluation_duration=5,
         evaluation_duration_unit="episodes",
@@ -158,6 +157,7 @@ def create_ddt_config(
             explore=False,
         ),
     )
+    config.callbacks(callbacks_class=DiscreteEvalCallback)
 
     config.reporting(
         keep_per_episode_custom_metrics=True,  # If True calculate max min mean

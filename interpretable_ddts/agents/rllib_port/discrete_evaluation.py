@@ -1,5 +1,5 @@
-from ray.rllib.algorithms import Algorithm
-from ray.rllib.env.env_runner_group import EnvRunnerGroup
+from __future__ import annotations
+from ray.rllib.evaluation.metrics import summarize_episodes
 from ray.rllib.utils.metrics import (
     ENV_RUNNER_RESULTS,
     EVALUATION_RESULTS,
@@ -9,15 +9,84 @@ from ray.rllib.utils.metrics import (
     NUM_EPISODES_LIFETIME,
 )
 from ray.rllib.utils.metrics.metrics_logger import MetricsLogger
+from ray.rllib.algorithms.callbacks import DefaultCallbacks
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from interpretable_ddts.agents.ddt_ppo_module import DDTModule
+    from ray.rllib.algorithms import Algorithm
+    from ray.rllib.env.env_runner_group import EnvRunnerGroup
+    from ray.rllib.env.single_agent_env_runner import SingleAgentEnvRunner
+
+
+def _discrete_evaluate_on_local_env_runner(
+    self: Algorithm, env_runner: SingleAgentEnvRunner, metrics_logger: MetricsLogger
+):
+    """Copy of rays evaluate that logs to a evaluation/discrete key"""
+    if hasattr(env_runner, "input_reader") and env_runner.input_reader is None:  # type: ignore[attr-defined]
+        raise ValueError(
+            "Can't evaluate on a local worker if this local worker does not have "
+            "an environment!\nTry one of the following:"
+            "\n1) Set `evaluation_interval` > 0 to force creating a separate "
+            "evaluation EnvRunnerGroup.\n2) Set `create_env_on_driver=True` to "
+            "force the local (non-eval) EnvRunner to have an environment to "
+            "evaluate on."
+        )
+    if self.config.evaluation_parallel_to_training:
+        raise ValueError(
+            "Cannot run on local evaluation worker parallel to training! Try "
+            "setting `evaluation_parallel_to_training=False`."
+        )
+
+    # How many episodes/timesteps do we need to run?
+    unit = self.config.evaluation_duration_unit
+    duration: int = self.config.evaluation_duration  # type: ignore
+    eval_cfg = self.evaluation_config
+
+    env_steps = agent_steps = 0
+
+    all_batches = []
+    if self.config.enable_env_runner_and_connector_v2:
+        episodes = env_runner.sample(
+            num_timesteps=duration if unit == "timesteps" else None,
+            num_episodes=duration if unit == "episodes" else None,
+        )
+        agent_steps += sum(e.agent_steps() for e in episodes)
+        env_steps += sum(e.env_steps() for e in episodes)
+    elif unit == "episodes":
+        for _ in range(duration):
+            batch = env_runner.sample()
+            agent_steps += batch.agent_steps()
+            env_steps += batch.env_steps()
+            if self.reward_estimators:
+                all_batches.append(batch)
+    else:
+        batch = env_runner.sample()
+        agent_steps += batch.agent_steps()
+        env_steps += batch.env_steps()
+        if self.reward_estimators:
+            all_batches.append(batch)
+
+    env_runner_results = env_runner.get_metrics()
+
+    if not self.config.enable_env_runner_and_connector_v2:
+        env_runner_results = summarize_episodes(
+            env_runner_results,
+            env_runner_results,
+            keep_custom_metrics=eval_cfg.keep_per_episode_custom_metrics,
+        )
+    else:
+        metrics_logger.log_dict(
+            env_runner_results,
+            key=(EVALUATION_RESULTS, "discrete", ENV_RUNNER_RESULTS),
+        )
+        env_runner_results = None
+
+    return env_runner_results, env_steps, agent_steps, all_batches
 
 
 def eval_with_discrete(self: Algorithm, eval_workers: EnvRunnerGroup) -> tuple[dict, int, int]:
-    assert eval_workers == self.eval_env_runner_group
     local_runner = self.env_runner_group.local_env_runner
     module: DDTModule = local_runner.module
     if getattr(module, "CAN_USE_DISCRETE_EVAL", False):
@@ -96,3 +165,40 @@ def eval_with_discrete(self: Algorithm, eval_workers: EnvRunnerGroup) -> tuple[d
             agent_steps_normal = agent_steps
             env_steps_normal = env_steps
     return combined_eval_results, env_steps_normal, agent_steps_normal
+
+class DiscreteEvalCallback(DefaultCallbacks):
+    def on_evaluate_end(
+        self,
+        *,
+        algorithm: "Algorithm",
+        metrics_logger: Optional[MetricsLogger] = None,
+        evaluation_metrics: dict,
+        **kwargs,  # noqa: ARG002
+    ) -> None:
+        env_runner = algorithm.env_runner
+        eval_workers = algorithm.eval_env_runner_group
+        if eval_workers is None:
+            env_runner = algorithm.env_runner_group.local_env_runner
+        elif eval_workers.num_healthy_remote_workers() == 0:
+            env_runner = algorithm.eval_env_runner
+        else:
+            # possibly still use eval_env_runner
+            raise NotImplementedError("Parallel discrete evaluation not implemented")
+        module: DDTModule = env_runner.module
+        if not getattr(module, "CAN_USE_DISCRETE_EVAL", False):
+            return
+        module.switch_mode(discrete=True)
+        assert module.is_discrete
+        # new_metrics_logger = MetricsLogger()  # use a new metrics logger to avoid interference
+        (
+            eval_results,
+            env_steps,
+            agent_steps,
+            batches,
+        ) = _discrete_evaluate_on_local_env_runner(algorithm, env_runner, metrics_logger)
+        module.switch_mode(discrete=False)
+        assert module.is_discrete is False
+        assert eval_results is None
+        if eval_results is None: # and algorithm.config.enable_env_runner_and_connector_v2:
+            eval_results = metrics_logger.reduce((EVALUATION_RESULTS, "discrete"), return_stats_obj=True)
+        evaluation_metrics["discrete"] = eval_results
