@@ -87,6 +87,7 @@ class AgentBase:
         txts_path.mkdir(parents=True, exist_ok=True)
         # File might was created in parallel
         if rewards_file.exists():
+            self._version = None  # reset to prevent ValueError above
             self._check_version()  # will set version recursively
         elif self.save_output:
             self._write_hparams()
@@ -130,12 +131,21 @@ class AgentBase:
         return action  # type: ignore
 
     def end_episode(self, reward):
+        """
+        Perform the PPO update and store the reward
+
+        Increases the amount of steps taken.
+
+        Returns:
+            The value and action loss
+        """
         assert self.version is not None and self.rewards_file
         self.reward_history.append(reward)
         value_loss, action_loss = self.ppo.batch_updates(self.replay_buffer, self)
         if self.save_output:
             self.rewards_file.open("a").write(str(reward) + "\n")
         self.num_steps += 1
+        return value_loss, action_loss
 
     def reset(self):
         self.replay_buffer.clear()

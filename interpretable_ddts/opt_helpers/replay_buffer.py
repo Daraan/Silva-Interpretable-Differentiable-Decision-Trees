@@ -111,7 +111,7 @@ class ReplayBufferSingleAgent(object):
         self.step = 0
 
     def sample(self) -> dict[str, Any] | Literal[False]:
-        # randomly sample a time step
+        """randomly sample a time step"""
         if len(self.states_list) <= 0:
             return False
         t = random.randint(0, len(self.states_list) - 1)
