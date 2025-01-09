@@ -12,6 +12,12 @@ from interpretable_ddts.agents.ddt_catalog import DDTCatalog
 from interpretable_ddts.agents.ddt_ppo_module import DDTModule
 from interpretable_ddts.agents.ppo_learner import SilvaLearner
 from interpretable_ddts.agents.rllib_port.discrete_evaluation import eval_with_discrete
+from interpretable_ddts.runfiles._pbar_updates import update_pbar
+from interpretable_ddts.runfiles.constants import (
+    DISC_EVAL_METRIC_RETURN_MEAN,
+    EVAL_METRIC_RETURN_MEAN,
+    TRAIN_METRIC_RETURN_MEAN,
+)
 from interpretable_ddts.tools import is_pbar
 
 import ray
@@ -27,11 +33,6 @@ if TYPE_CHECKING:
     import argparse
 
 _ConfigType = TypeVar("_ConfigType", bound=PPOConfig)
-
-# Keys
-TRAIN_METRIC_RETURN_MEAN = ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
-DISC_EVAL_METRIC_RETURN_MEAN = EVALUATION_RESULTS + "/discrete/" + ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
-EVAL_METRIC_RETURN_MEAN = EVALUATION_RESULTS + "/" + ENV_RUNNER_RESULTS + "/" + EPISODE_RETURN_MEAN
 
 
 def create_ddt_config(
@@ -270,19 +271,22 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
         # Update progress bar
         if not is_pbar(pbar):
             continue
-        try:
-            pbar.set_description(
-                f"R mean: {metrics[TRAIN_METRIC_RETURN_MEAN]:>6.1f} |"
-                f"R max: {result['env_runners']['episode_return_max']:>4.0f} |"
-                f"R roll: {running_reward:>6.1f} |"
-                f"Eval Rew: {eval_mean:>6.1f} |"
-                f"Roll Eval Rew: {running_eval_reward:>6.1f} |"
-                f"Disc Eval Rew: {disc_eval_mean:>6.1f} |"
-                f"Roll Disc Rew: {disc_running_eval_reward:>6.1f} |"
-            )
-        except KeyError as e:
-            print("Error with Key", e)
-            pbar.set_description("")
+        update_pbar(
+            pbar,
+            train_results={
+                "mean": metrics[TRAIN_METRIC_RETURN_MEAN],
+                "max": result["env_runners"]["episode_return_max"],
+                "roll": running_reward,
+            },
+            eval_results={
+                "mean": eval_mean,
+                "roll": running_eval_reward,
+            },
+            discrete_eval_results={
+                "mean": disc_eval_mean,
+                "roll": disc_running_eval_reward,
+            },
+        )
     eval_result = algo.evaluate()
     eval_result["done"] = True
     return eval_result

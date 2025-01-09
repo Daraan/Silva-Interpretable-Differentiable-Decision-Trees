@@ -24,7 +24,8 @@ from ray.tune.logger import (  # noqa: F401
     TBXLoggerCallback,
 )
 
-from interpretable_ddts.runfiles._ddt_trainable import DISC_EVAL_METRIC_RETURN_MEAN, build_and_train, create_ddt_config
+from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
+from interpretable_ddts.runfiles.constants import DISC_EVAL_METRIC_RETURN_MEAN
 
 if TYPE_CHECKING:
     from ray.tune.callback import Trial

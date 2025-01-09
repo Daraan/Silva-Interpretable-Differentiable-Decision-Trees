@@ -12,7 +12,6 @@ from ray.rllib.core.models.base import ACTOR, CRITIC, ENCODER_OUT
 from ray.rllib.core.rl_module.rl_module import RLModuleConfig
 from ray.rllib.utils.deprecation import DEPRECATED_VALUE
 from ray.rllib.utils.deprecation import logger as _deprecation_logger
-from ray.rllib.utils.metrics import EPISODE_RETURN_MEAN
 
 from interpretable_ddts.agents._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt import DDT
@@ -20,6 +19,7 @@ from interpretable_ddts.opt_helpers import ppo_update
 from interpretable_ddts.opt_helpers.replay_buffer import (
     ReplayBufferSingleAgent as SilvaReplayBuffer,
 )
+from interpretable_ddts.runfiles.constants import DISC_EVAL_METRIC_RETURN_MEAN, EVAL_METRIC_RETURN_MEAN
 
 # This suppresses a deprecation warning from RLModuleConfig
 __old_level = _deprecation_logger.getEffectiveLevel()
@@ -162,13 +162,13 @@ class DDTModule(PPOTorchRLModule):
         }
 
     def switch_mode(self, *, discrete: bool):
-        if discrete and self.is_discrete:
+        if discrete and not self.is_discrete:
             self.pi = self.__action_network.create_discrete_copy()
             self.vf = self.__value_network.create_discrete_copy()
             self.pi.eval()
             self.vf.eval()
             self.is_discrete = True
-        elif not discrete and not self.is_discrete:
+        elif not discrete and self.is_discrete:
             self.pi = self.__action_network
             self.vf = self.__value_network
             self.is_discrete = False
@@ -251,14 +251,18 @@ class LegacyDDTModule(DDTModule, AgentBase):
             new_agent.ppo = self.ppo
         return new_agent
 
-    def end_episode(self, reward):
+    def end_episode(self, reward, discrete_reward: Optional[float] = None):
         if self._duplicate:
             logging.warning("Calling end_episode on a duplicate agent")
-        AgentBase.end_episode(self, reward)
+        loss = AgentBase.end_episode(self, reward)
         # This should only be used in gym_runner which does not use ray train; only one report per episode
+        metrics = {
+            EVAL_METRIC_RETURN_MEAN: reward,
+        }
+        if discrete_reward is not None:
+            metrics[DISC_EVAL_METRIC_RETURN_MEAN] = discrete_reward
         ray.train.report(
+            metrics,
             checkpoint=None,
-            metrics={
-                EPISODE_RETURN_MEAN: reward,
-            },
         )
+        return loss

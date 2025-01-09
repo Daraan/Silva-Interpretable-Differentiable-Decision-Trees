@@ -21,6 +21,7 @@ from tqdm import tqdm
 from interpretable_ddts.agents.ddt_agent import DDTAgent
 from interpretable_ddts.agents.mlp_agent import MLPAgent
 from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
+from interpretable_ddts.runfiles._pbar_updates import update_pbar
 from interpretable_ddts.tools import seed_everything
 
 if TYPE_CHECKING:
@@ -175,24 +176,31 @@ def main(
                 discrete=True,
             )
             discrete_running_reward_array.append(discrete_returned_object[0])
-        agent.end_episode(reward)
+            agent.end_episode(reward, discrete_returned_object[0])  # pyright: ignore[reportCallIssue]
+        else:
+            agent.end_episode(reward)
 
         running_reward = sum(running_reward_array[-100:]) / float(min(100.0, len(running_reward_array)))
         if is_pbar(pbar) and episode % 2 == 0:
-            desc = (
-                f"{agent.bot_name}_v{agent.version} "
-                f"|Ep. {episode:<4} |Rwrd: {reward:>4.0f} "
-                f"|Avg. Rwrd: {running_reward:>4.0f} "
-                f"|Len {returned_object[1]['steps']:>3}"
+            update_pbar(
+                pbar,
+                train_results=None,
+                eval_results={
+                    "mean": reward,
+                    "roll": running_reward,
+                },
+                discrete_eval_results=(
+                    {
+                        "mean": discrete_running_reward_array[-1],
+                        "roll": (
+                            sum(discrete_running_reward_array[-100:])
+                            / float(min(100.0, len(discrete_running_reward_array)))
+                        ),
+                    }
+                    if can_duplicate_discrete
+                    else None
+                ),
             )
-            if can_duplicate_discrete:
-                desc += f"|Disc Rwrd: {discrete_running_reward_array[-1]:>4.0f}"
-                discrete_running_reward = sum(discrete_running_reward_array[-100:]) / float(
-                    min(100.0, len(discrete_running_reward_array))
-                )
-                desc += f"|Avg. Disc Rwrd: {discrete_running_reward:>4.0f}"
-
-            pbar.set_description(desc)
         if agent.save_output and episode % 500 == 0:
             agent.save(models_path / f"{episode}th")
     # Save final episode
