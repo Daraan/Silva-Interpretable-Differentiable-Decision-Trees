@@ -85,13 +85,6 @@ if __name__ == "__main__":
         choices=["offline", "0", "1", "False", "off", "on"],
         type=str,
     )
-    parser.add_argument(
-        "-rl",
-        "--rllib",
-        help="Use rllib",
-        action="store_true",
-        default=False,
-    )
 
     args = parser.parse_args()
     if args.comet.lower() in ("0", "false", "off"):
@@ -139,6 +132,11 @@ if __name__ == "__main__":
         trainable = partial(build_and_train, use_pbar=True)
 
     callbacks = []
+    tags = ["dev"]
+    if args.test:
+        tags.append("test")
+    if args.legacy:
+        tags.append("legacy")
     if args.wandb:
         callbacks.append(
             WandbLoggerCallback(
@@ -153,6 +151,7 @@ if __name__ == "__main__":
                 monitor_gym=False,
                 # Special comment
                 notes="test save code",
+                tags=tags,
             ),
         )
     else:
@@ -166,8 +165,10 @@ if __name__ == "__main__":
         callbacks.append(
             CometLoggerCallback(
                 disabled=args.comet == "offline",  # do not upload
+                project_name="test-project",  # "general" for Uncategorized Experiments
+                workspace="dev-workspace" if args.test else None,
                 save_checkpoints=False,
-                tags=["test", "dev"],
+                tags=tags,
                 # Other keywords see: https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment/
                 auto_metric_step_rate=10,  # How often batch metrics are logged
                 log_git_metadata=True,  # disabled by rllib
