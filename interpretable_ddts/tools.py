@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import datetime
+import os
 from pathlib import Path
 import re
+import time
 from typing import Iterable, Literal, TypeVar, Union, Optional, TYPE_CHECKING, overload
 import pandas as pd
 import random
@@ -15,6 +18,7 @@ from ray.experimental import tqdm_ray
 from interpretable_ddts.runfiles.constants import COMET_OFFLINE_DIRECTORY
 
 if TYPE_CHECKING:
+    from ray.tune.callback import Trial
     from pandas._typing import AggFuncTypeBase
     from typing_extensions import TypeIs
 
@@ -278,3 +282,19 @@ if __name__ == "__main__":
                 file.unlink()
         else:
             print("Aborted")
+
+_SCRIPT_TIMESTAMP = time.time()
+
+
+def trial_name_creator(trial: Trial) -> str:
+    start_time = datetime.datetime.fromtimestamp(trial.run_metadata.start_time or _SCRIPT_TIMESTAMP)
+    start_time_str = start_time.strftime("%Y-%m-%dT%H:%M")
+    return "_".join(
+        [
+            trial.trainable_name,
+            trial.evaluated_params["env"],
+            trial.evaluated_params["module"],
+            trial.trial_id,
+            start_time_str,
+        ]
+    )

@@ -6,7 +6,7 @@ import os
 from functools import partial
 from pathlib import Path
 import sys
-from typing import TYPE_CHECKING
+from typing import Any
 
 import gymnasium as gym
 import ray
@@ -27,6 +27,7 @@ from ray.tune.logger import (  # noqa: F401
 from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
 from interpretable_ddts.runfiles.constants import DISC_EVAL_METRIC_RETURN_MEAN
 from interpretable_ddts.tools import comet_upload_offline_experiments
+from interpretable_ddts.tools import trial_name_creator
 
 os.environ["RAY_COLOR_PREFIX"] = "1"
 
@@ -84,6 +85,8 @@ if __name__ == "__main__":
         choices=["offline", "offline+upload", "0", "1", "False", "off", "on"],
         type=str,
     )
+    parser.add_argument("--extra", help="extra arguments", nargs="+", choices=["silva_loss"])
+    parser.add_argument("--use_silva_loss", "--silva_loss", help="Use Silva loss", action="store_true", default=False)
     parser.add_argument("--comment", "-c", help="Add comment to this run", type=str, default="")
 
     args = parser.parse_args()
@@ -217,29 +220,36 @@ if __name__ == "__main__":
     #    [{'CPU': 1.0}] + [{'CPU': 1.0}] * (4 if args.parallel else 0),
     # ))
     # Use tune.with_parameters to pass large objects to the trainable
+    # Create a dict to upload as hyperparameters
+
+    # -- Prepocess Parameters --
+
+    upload_args = vars(args).copy()
+    upload_args["extra"] = repr(args.extra)
+    for key in ("test", "wandb", "comet", "comment", "not_parallel", "num_jobs", "silent"):
+        del upload_args[key]
+    if upload_args["process_number"] is None:
+        del upload_args["process_number"]
+
+    param_space: dict[str, Any] = {
+        "env": config.env if isinstance(config.env, str) else config.env.unwrapped.spec.id,
+        "algo": config.algo_class.__name__,
+        "module": config.rl_module_spec.module_class.__name__,
+        "model_config": config.rl_module_spec.model_config,
+    }
+    # WandB might not log them if they are not selected as choice
+    param_space = {k: tune.choice([v]) for k, v in param_space.items()}
+    param_space["cli_args"] = upload_args
+
     if args.test and args.not_parallel:
         # will spew some warnings about train.report
         if args.legacy:
             trainable({})
         else:
-            result = build_and_train({"args": args}, disable_report=True)
+            result = build_and_train(param_space, disable_report=True)
         sys.exit()
 
-    def trial_name_creator(trial: Trial) -> str:
-        return "_".join(
-            [trial.trainable_name, trial.evaluated_params["env"], trial.evaluated_params["module"], trial.trial_id]
-        )
-
-    # WandB might not log them if they are not selected
-    param_space = {
-        "env": config.env if isinstance(config.env, str) else config.env.unwrapped.spec.id,
-        "algo": config.algo_class.__name__,
-        "module": config.rl_module_spec.module_class.__name__,
-        "model_config": config.rl_module_spec.model_config,
-        "args": args,
-    }
-    param_space = {k: tune.choice([v]) for k, v in param_space.items()}
-
+    # -- Tune --
     tuner = tune.Tuner(
         trainable,  # Note: possibly can also be a list
         param_space=param_space,

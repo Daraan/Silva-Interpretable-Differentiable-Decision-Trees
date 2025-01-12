@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import argparse
 import os
 import gymnasium as gym
+import logging
+from ray.air.integrations.comet import CometLoggerCallback
 from ray.rllib.algorithms import AlgorithmConfig
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
@@ -23,20 +26,26 @@ from interpretable_ddts.tools import is_pbar
 import ray
 from ray import train
 from ray.experimental import tqdm_ray
-from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS, EPISODE_RETURN_MEAN, EVALUATION_RESULTS
+from ray.rllib.utils.metrics import (
+    ENV_RUNNER_RESULTS,
+    EPISODE_RETURN_MEAN,
+    EVALUATION_RESULTS,
+    LEARNER_RESULTS,
+    NUM_EPISODES,
+)
 
 
 import math
-from typing import Any, Optional, TypeVar, TYPE_CHECKING
+from typing import Any, Optional, TypeVar
 
-if TYPE_CHECKING:
-    import argparse
+
+logger = logging.getLogger(__name__)
 
 _ConfigType = TypeVar("_ConfigType", bound=PPOConfig)
 
 
 def create_ddt_config(
-    args: argparse.Namespace,
+    args: dict[str, Any] | argparse.Namespace,
     env_type: Optional[str | gym.Env] = None,
     *,
     config_class: type[_ConfigType] = PPOConfig,
@@ -45,9 +54,11 @@ def create_ddt_config(
     Args:
         legacy: Use the legacy code based on `gym_runner.py` and not an algorithm class.
     """
-    if not env_type and not args.env_type:
+    if isinstance(args, argparse.Namespace):
+        args = vars(args).copy()
+    if not env_type and not args["env_type"]:
         raise ValueError("No environment specified")
-    env_type = env_type or args.env_type
+    env_type = env_type or args["env_type"]
     config = config_class()
     config.environment(env_type)
     config.api_stack(
@@ -55,21 +66,21 @@ def create_ddt_config(
         enable_env_runner_and_connector_v2=True,
     )
     config.resources(
-        # num_gpus=1 if args.gpu else 0,4
+        # num_gpus=1 if args["gpu"] else 0,4
         # process that runs Algorithm.training_step() during Tune
         num_cpus_for_main_process=1,
-        # num_learner_workers=4 if args.parallel else 1,
+        # num_learner_workers=4 if args["parallel"] else 1,
         # num_cpus_per_learner_worker=1,
         # num_cpus_per_worker=1,
     )
     config.env_runners(
-        num_env_runners=2 if args.parallel else 0,
+        num_env_runners=2 if args["parallel"] else 0,
         num_cpus_per_env_runner=1,  # num_cpus_per_worker
         # How long an rollout episode lasts, for "auto" calculated from batch_size
         # total_train_batch_size / (num_envs_per_env_runner * num_env_runners)
         # rollout_fragment_length=1,  # Default: "auto"
         num_envs_per_env_runner=1,
-        validate_env_runners_after_construction=args.test,
+        # validate_env_runners_after_construction=args["test"],
         # 1) "truncate_episodes": Each call to `EnvRunner.sample()` returns a
         #    batch of at most `rollout_fragment_length * num_envs_per_env_runner` in
         #    size. The batch is exactly `rollout_fragment_length * num_envs`
@@ -83,16 +94,15 @@ def create_ddt_config(
     )
     config.learners(
         # for fractional GPUs, you should always set num_learners to 0 or 1
-        num_learners=0 if args.parallel else 0,
+        num_learners=0 if args["parallel"] else 0,
         num_cpus_per_learner=1,
-        num_gpus_per_learner=1 if args.gpu else 0,
+        num_gpus_per_learner=1 if args["gpu"] else 0,
     )
 
-    USE_SILVA_LOSS = True
     config.framework("torch")
     config.training(
         learner_class=SilvaLearner,
-        learner_config_dict={"use_silva_loss": USE_SILVA_LOSS},
+        learner_config_dict={"use_silva_loss": args["use_silva_loss"]},
         gamma=0.99,
         use_critic=True,
         # with a growing number of Learners and to increase the learning rate as follows:
@@ -129,14 +139,13 @@ def create_ddt_config(
         observation_space=init_env.observation_space,
         action_space=init_env.action_space,
         model_config={
-            "bot_name": args.agent_type + args.env_type,
-            "rule_list": args.rule_list,
-            "num_rules": args.num_leaves,
-            "save_output": not args.test,
-            "use_gpu": args.gpu,
-            "vf_double_output": USE_SILVA_LOSS,
-            "action_use_softmax": USE_SILVA_LOSS,
-            "use_silva_loss": USE_SILVA_LOSS,  # unused by model config
+            "bot_name": args["agent_type"] + args["env_type"],
+            "rule_list": args["rule_list"],
+            "num_rules": args["num_leaves"],
+            "use_gpu": args["gpu"],
+            "vf_double_output": args["use_silva_loss"],
+            "action_use_softmax": args["use_silva_loss"],
+            "use_silva_loss": args["use_silva_loss"],  # unused by model config
         },
         catalog_class=DDTCatalog,
     )
@@ -149,7 +158,7 @@ def create_ddt_config(
         evaluation_interval=10,
         evaluation_duration=5,
         evaluation_duration_unit="episodes",
-        evaluation_num_env_runners=2 if args.parallel else 0,
+        evaluation_num_env_runners=2 if args["parallel"] else 0,
         # NOTE: Policy gradient algorithms are able to find the optimal
         # policy, even if this is a stochastic one. Setting "explore=False" here
         # results in the evaluation workers not using this optimal policy!
@@ -167,7 +176,7 @@ def create_ddt_config(
     )
     config.debugging(
         # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.debugging.html#ray-rllib-algorithms-algorithm-config-algorithmconfig-debugging
-        # seed=args.seed,
+        # seed=args["seed"],
     )
     # Checks
     config.validate_train_batch_size_vs_rollout_fragment_length()
@@ -175,25 +184,20 @@ def create_ddt_config(
         config.rl_module_spec.model_config["vf_double_output"]  # type: ignore
         == config.learner_config_dict["use_silva_loss"]
     )
-    if args.legacy:
+    if args["legacy"]:
         from interpretable_ddts.agents.ddt_ppo_module import LegacyDDTModule
 
         module_spec.module_class = LegacyDDTModule
         module_spec.model_config.update(  # type: ignore
             {
-                "save_output": not args.test,
-                "use_gpu": args.gpu,
+                "save_output": False,  # TODO: Add checkpoint for legacy
+                "use_gpu": args["gpu"],
                 "vf_double_output": True,
                 "action_use_softmax": True,
                 "use_silva_loss": True,
             },
         )
         config.evaluation(custom_evaluation_function=None)
-        assert config.rl_module_spec.module_class == LegacyDDTModule  # type: ignore
-        assert config.rl_module_spec.model_config["vf_double_output"]  # type: ignore
-        assert config.rl_module_spec.model_config["action_use_softmax"]  # type: ignore
-        assert config.rl_module_spec.model_config["use_silva_loss"]  # type: ignore
-        assert config.custom_evaluation_function is None
 
     return config, module_spec
 
@@ -207,17 +211,19 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
     Attention:
         Best practice is to not refer to any objects from outer scope in the training_function
     """
-    args = hparams["args"]
+    args: dict = hparams["cli_args"]
+    # TODO: this should use the parameters from the search space
     config, _ = create_ddt_config(args)
     algo = config.build()
 
     if use_pbar:
-        pbar = tqdm_ray.tqdm(range(args.episodes), position=hparams.get("process_number", None))
+        pbar = tqdm_ray.tqdm(range(args["episodes"]), position=hparams.get("process_number", None))
     else:
-        pbar = range(args.episodes)
+        pbar = range(args["episodes"])
     running_eval_rewards = []
     running_disc_eval_rewards = []
     running_rewards = []
+    result = {}
     for _episode in pbar:
         result = algo.train()
         # Results
@@ -243,6 +249,8 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
         disc_eval_mean = disc_eval_env_runner_results.get(EPISODE_RETURN_MEAN, float("nan"))
         if not math.isnan(disc_eval_mean):
             running_disc_eval_rewards.append(disc_eval_mean)
+        elif running_disc_eval_rewards:  # TEMP: As long as metrics logger for discrete evaluation is not shared
+            disc_eval_mean = running_disc_eval_rewards[-1]
         disc_running_eval_reward = sum(running_disc_eval_rewards[-100:]) / (
             min(100, len(running_disc_eval_rewards)) or float("nan")  # nan for 0
         )
@@ -275,7 +283,7 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
             pbar,
             train_results={
                 "mean": metrics[TRAIN_METRIC_RETURN_MEAN],
-                "max": result["env_runners"]["episode_return_max"],
+                "max": result["env_runners"].get("episode_return_max", float("nan")),
                 "roll": running_reward,
             },
             eval_results={
@@ -287,6 +295,72 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
                 "roll": disc_running_eval_reward,
             },
         )
-    eval_result = algo.evaluate()
-    eval_result["done"] = True
-    return eval_result
+    if "evaluation" not in result:
+        result["evaluation"] = algo.evaluate()
+    result["done"] = True
+    if args.get("comment"):
+        result["comment"] = args["comment"]
+    try:
+        reduced_results = reduce_results(
+            result, extra_keys_to_keep=None
+        )  # if not args["test"] else [(LEARNER_RESULTS,)])
+    except Exception:
+        logger.exception("Failed to reduce results")
+        return result
+    else:
+        return reduced_results
+
+
+# NOTE: This should not overlap!
+RESULTS_TO_KEEP = {
+    (ENV_RUNNER_RESULTS, EPISODE_RETURN_MEAN),
+    (ENV_RUNNER_RESULTS, NUM_EPISODES),
+    (EVALUATION_RESULTS, ENV_RUNNER_RESULTS, EPISODE_RETURN_MEAN),
+    (EVALUATION_RESULTS, "discrete", ENV_RUNNER_RESULTS, EPISODE_RETURN_MEAN),
+    ("comment",),
+}
+RESULTS_TO_KEEP.update((key,) for key in CometLoggerCallback._other_results)
+RESULTS_TO_KEEP.update((key,) for key in CometLoggerCallback._system_results)
+RESULTS_TO_KEEP.update((key,) for key in CometLoggerCallback._exclude_results)
+assert all(isinstance(key, (tuple, list)) for key in RESULTS_TO_KEEP)
+
+_MISSING = object()
+
+
+def _find_item(obj: dict[str, Any], keys: list[str]) -> Any:
+    if len(keys) == 1:
+        return obj.get(keys[0], _MISSING)
+    value = obj.get(keys[0], _MISSING)
+    if isinstance(value, dict):
+        return _find_item(value, keys[1:])
+    if value is not _MISSING and len(keys) > 0:
+        raise TypeError(f"Expected dict at {keys[0]} but got {value}")
+    return value
+
+
+def reduce_results(results: dict[str, Any], extra_keys_to_keep: Optional[list[tuple[str]]] = None) -> dict[str, Any]:
+    # from omegaconf import OmegaConf
+    # res = OmegaConf.create(results, flags={"allow_objects": True})
+    # return OmegaConf.to_container(OmegaConf.merge((OmegaConf.select(res, key) for key in RESULTS_TO_KEEP)))
+
+    reduced: dict[str, Any] = {}
+    _count = 0
+    if extra_keys_to_keep:
+        keys_to_keep = RESULTS_TO_KEEP.copy()
+        keys_to_keep.update(extra_keys_to_keep)
+    else:
+        keys_to_keep = RESULTS_TO_KEEP
+
+    for keys in keys_to_keep:
+        value = _find_item(results, keys if not isinstance(keys, str) else [keys])
+        if value is not _MISSING:
+            sub_dir = reduced
+            for key in keys[:-1]:
+                sub_dir = sub_dir.setdefault(key, {})
+            if keys[-1] in sub_dir:
+                raise ValueError(f"Key {keys[-1]} already exists in {sub_dir}")
+            sub_dir[keys[-1]] = value
+            _count += 1
+    if _count != len(RESULTS_TO_KEEP):
+        logger.warning("Reduced results do not match the expected amount of keys: %s", reduced)
+    return reduced
