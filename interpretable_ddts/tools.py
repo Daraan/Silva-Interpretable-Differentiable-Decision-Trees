@@ -12,6 +12,8 @@ import torch.cuda
 from tqdm import tqdm
 from ray.experimental import tqdm_ray
 
+from interpretable_ddts.runfiles.constants import COMET_OFFLINE_DIRECTORY
+
 if TYPE_CHECKING:
     from pandas._typing import AggFuncTypeBase
     from typing_extensions import TypeIs
@@ -228,6 +230,22 @@ _T = TypeVar("_T")
 
 def is_pbar(pbar: Iterable[_T]) -> TypeIs[tqdm_ray.tqdm | tqdm[_T]]:
     return isinstance(pbar, (tqdm_ray.tqdm, tqdm))
+
+
+def comet_upload_offline_experiments():
+    import comet_ml
+    import logging
+
+    archives = list(map(str, Path(COMET_OFFLINE_DIRECTORY).glob("*.zip")))
+    if not archives:
+        logging.info("No archives to upload")
+        return
+    logging.info("Uploading Archives: %s", archives)
+    comet_ml.offline.main_upload(archives, force_upload=False)
+    new_dir = Path(COMET_OFFLINE_DIRECTORY) / "uploaded"
+    new_dir.mkdir(exist_ok=True)
+    for path in Path(os.environ["COMET_OFFLINE_DIRECTORY"]).glob("*.zip"):
+        path.rename(new_dir / path.name)
 
 
 # ----

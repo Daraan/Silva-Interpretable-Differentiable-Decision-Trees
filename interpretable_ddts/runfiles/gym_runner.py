@@ -22,6 +22,7 @@ from interpretable_ddts.agents.ddt_agent import DDTAgent
 from interpretable_ddts.agents.mlp_agent import MLPAgent
 from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
 from interpretable_ddts.runfiles._pbar_updates import update_pbar
+from interpretable_ddts.runfiles.constants import ENV_RUNNER_RESULTS, EPISODE_RETURN_MEAN, EVALUATION_RESULTS
 from interpretable_ddts.tools import seed_everything
 
 if TYPE_CHECKING:
@@ -249,6 +250,8 @@ def start_process(
     args: argparse.Namespace,
     init_env: Optional[gym.Env] = None,
     lock: Optional[Lock] = None,
+    *,
+    use_rllib_output: bool = False,
 ):
     """Wrapper of main that can be used in parallel."""
     agent_type: "str | RLModuleSpec" = args.agent_type
@@ -320,10 +323,23 @@ def start_process(
         pbar=pbar,
         render_mode=args.render_mode,
     )
-    return {
-        "running_reward_mean": np.mean(reward_array[-100:]),
-        "perfect_episodes": sum([1 for r in reward_array if r >= 499]),
-    }
+    if not use_rllib_output:
+        results = {
+            "running_reward_mean": np.mean(reward_array[-100:]),
+            "num_episodes": len(reward_array),
+            "perfect_episodes": sum([1 for r in reward_array if r >= 499]),
+        }
+    else:
+        results = {
+            EVALUATION_RESULTS: {
+                ENV_RUNNER_RESULTS: {
+                    EPISODE_RETURN_MEAN: max(reward_array[-5:]),
+                },
+            },
+        }
+    if "comment" in args:
+        results["comment"] = args.comment
+    return results
 
 
 if __name__ == "__main__":

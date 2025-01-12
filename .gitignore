@@ -139,6 +139,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# comet
+.cometml-runs
+
 prometheus-3.0.1.linux-amd64.tar.gz
 prometheus-3.0.1.linux-amd64/
 # grafana

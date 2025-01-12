@@ -166,6 +166,7 @@ def eval_with_discrete(self: Algorithm, eval_workers: EnvRunnerGroup) -> tuple[d
             env_steps_normal = env_steps
     return combined_eval_results, env_steps_normal, agent_steps_normal
 
+
 class DiscreteEvalCallback(DefaultCallbacks):
     def on_evaluate_end(
         self,
@@ -199,6 +200,6 @@ class DiscreteEvalCallback(DefaultCallbacks):
         module.switch_mode(discrete=False)
         assert module.is_discrete is False
         assert eval_results is None
-        if eval_results is None: # and algorithm.config.enable_env_runner_and_connector_v2:
-            eval_results = metrics_logger.reduce((EVALUATION_RESULTS, "discrete"), return_stats_obj=True)
+        if eval_results is None:  # and algorithm.config.enable_env_runner_and_connector_v2:
+            eval_results = metrics_logger.reduce((EVALUATION_RESULTS, "discrete"), return_stats_obj=False)
         evaluation_metrics["discrete"] = eval_results

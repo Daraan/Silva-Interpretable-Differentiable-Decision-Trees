@@ -26,9 +26,7 @@ from ray.tune.logger import (  # noqa: F401
 
 from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
 from interpretable_ddts.runfiles.constants import DISC_EVAL_METRIC_RETURN_MEAN
-
-if TYPE_CHECKING:
-    from ray.tune.callback import Trial
+from interpretable_ddts.tools import comet_upload_offline_experiments
 
 os.environ["RAY_COLOR_PREFIX"] = "1"
 
@@ -83,13 +81,20 @@ if __name__ == "__main__":
         help="Log to Comet",
         const="1",
         default="off",
-        choices=["offline", "0", "1", "False", "off", "on"],
+        choices=["offline", "offline+upload", "0", "1", "False", "off", "on"],
         type=str,
     )
+    parser.add_argument("--comment", "-c", help="Add comment to this run", type=str, default="")
 
     args = parser.parse_args()
+    use_comet_offline = args.comet.lower().startswith("offline")
     if args.comet.lower() in ("0", "false", "off"):
         args.comet = False
+    if not args.test and not args.comet:
+        logger.warning("Not in test mode and comet disabled. Will not log to Comet")
+        import time
+
+        time.sleep(4)  # give user time to cancel
 
     if args.seed == -1:
         args.seed = None
@@ -126,18 +131,24 @@ if __name__ == "__main__":
                 dim_in=int(module_spec.observation_space.shape[0]),  # pyright: ignore[reportOptionalSubscript, reportOptionalMemberAccess]
                 dim_out=int(module_spec.action_space.n),  # type: ignore[attr-defined],
                 render_mode=None,
+                comment=args.comment,
             ),
+            use_rllib_output=True,
         )
     else:
         config, module_spec = create_ddt_config(args)
         trainable = partial(build_and_train, use_pbar=True)
 
     callbacks = []
-    tags = ["dev"]
+    tags = ["dev", env_name, args.agent_type]
     if args.test:
         tags.append("test")
     if args.legacy:
         tags.append("legacy")
+    if args.use_silva_loss:
+        tags.append("silva_loss")
+    if args.gpu:
+        tags.append("gpu")
     if args.wandb:
         callbacks.append(
             WandbLoggerCallback(
@@ -151,7 +162,7 @@ if __name__ == "__main__":
                 # https://docs.wandb.ai/guides/integrations/openai-gym/
                 monitor_gym=False,
                 # Special comment
-                notes="test save code",
+                notes=args.comment if args.comment else None,
                 tags=tags,
             ),
         )
@@ -163,31 +174,43 @@ if __name__ == "__main__":
         from dotenv import load_dotenv
 
         load_dotenv(Path("~/.comet_api_key.env").expanduser())
-        callbacks.append(
-            CometLoggerCallback(
-                disabled=args.comet == "offline",  # do not upload
-                project_name="test-project",  # "general" for Uncategorized Experiments
-                workspace="dev-workspace" if args.test else None,
-                save_checkpoints=False,
-                tags=tags,
-                # Other keywords see: https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment/
-                auto_metric_step_rate=10,  # How often batch metrics are logged. Default 10
-                auto_histogram_epoch_rate=1,  # How often histograms are logged. Default 1
-                log_git_metadata=True,  # disabled by rllib
-                log_graph=False,  # computation graph, Default True
-                log_env_details=True,
-                # Subkeys of env details:
-                log_env_network=False,
-                log_env_disk=False,
-                log_env_gpu=False,
-                log_env_host=False,
-                # ---
-                auto_log_co2=False,  # needs codecarbon
-                auto_histogram_weight_logging=False,  # Default False
-                auto_histogram_gradient_logging=False,  # Default False
-                auto_histogram_activation_logging=False,  # Default False
-            ),
+
+        comet_callback = CometLoggerCallback(
+            online=not use_comet_offline,  # do not upload
+            project_name="test-project",  # "general" for Uncategorized Experiments
+            workspace="dev-workspace" if args.test else None,
+            save_checkpoints=False,
+            tags=tags,
+            # Other keywords see: https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment/
+            auto_metric_step_rate=10,  # How often batch metrics are logged. Default 10
+            auto_histogram_epoch_rate=1,  # How often histograms are logged. Default 1
+            parse_args=False,
+            log_git_metadata=(
+                not args.test and (args.num_jobs <= 10 or use_comet_offline)
+            ),  # disabled by rllib; might cause throttling
+            log_git_patch=False,
+            log_graph=False,  # computation graph, Default True
+            log_code=not args.test,  # Default True
+            log_env_details=True,
+            # Subkeys of env details:
+            log_env_network=False,
+            log_env_disk=False,
+            log_env_gpu=args.num_jobs <= 5 and args.gpu,
+            log_env_host=False,
+            log_env_cpu=args.num_jobs <= 5,
+            # ---
+            auto_log_co2=False,  # needs codecarbon
+            auto_histogram_weight_logging=False,  # Default False
+            auto_histogram_gradient_logging=False,  # Default False
+            auto_histogram_activation_logging=False,  # Default False
         )
+        # Metrics to exclude
+        # keep only time_this_iter_s
+        comet_callback._to_exclude.extend(
+            ["time_since_restore", "iterations_since_restore", "timestamp", "training_iteration"]
+        )
+        comet_callback._to_other.extend(["comment", "cli_args/comment"])
+        callbacks.append(comet_callback)
     # Will use these resources per job
     # NOTE: Even if not used will allocate these resources per run
     # trainable_with_resources = tune.with_resources(trainable, tune.PlacementGroupFactory(
@@ -247,3 +270,5 @@ if __name__ == "__main__":
         ),
     )
     results = tuner.fit()
+    if args.comet == "offline+upload":
+        comet_upload_offline_experiments()
