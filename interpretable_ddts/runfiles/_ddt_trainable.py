@@ -6,8 +6,10 @@ import gymnasium as gym
 import logging
 from ray.air.integrations.comet import CometLoggerCallback
 from ray.rllib.algorithms import AlgorithmConfig
+from ray.rllib.algorithms.callbacks import DefaultCallbacks, make_multi_callbacks
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
+from ray.rllib.examples.envs.env_rendering_and_recording import EnvRenderCallback
 import torch
 
 import tempfile
@@ -20,6 +22,10 @@ from interpretable_ddts.runfiles.constants import (
     DISC_EVAL_METRIC_RETURN_MEAN,
     EVAL_METRIC_RETURN_MEAN,
     TRAIN_METRIC_RETURN_MEAN,
+    EVALUATION_BEST_VIDEO,
+    EVALUATION_WORST_VIDEO,
+    DISCRETE_EVALUATION_BEST_VIDEO,
+    DISCRETE_EVALUATION_WORST_VIDEO,
 )
 from interpretable_ddts.tools import is_pbar
 
@@ -28,7 +34,9 @@ from ray import train
 from ray.experimental import tqdm_ray
 from ray.rllib.utils.metrics import (
     ENV_RUNNER_RESULTS,
+    EPISODE_RETURN_MAX,
     EPISODE_RETURN_MEAN,
+    EPISODE_RETURN_MIN,
     EVALUATION_RESULTS,
     LEARNER_RESULTS,
     NUM_EPISODES,
@@ -36,8 +44,7 @@ from ray.rllib.utils.metrics import (
 
 
 import math
-from typing import Any, Optional, TypeVar
-
+from typing import Any, Optional, TypeVar, TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +53,7 @@ _ConfigType = TypeVar("_ConfigType", bound=PPOConfig)
 
 def create_ddt_config(
     args: dict[str, Any] | argparse.Namespace,
-    env_type: Optional[str | gym.Env] = None,
+    env_type: Optional[str | type[gym.Env]] = None,
     *,
     config_class: type[_ConfigType] = PPOConfig,
 ) -> tuple[_ConfigType, RLModuleSpec]:
@@ -59,8 +66,13 @@ def create_ddt_config(
     if not env_type and not args["env_type"]:
         raise ValueError("No environment specified")
     env_type = env_type or args["env_type"]
+    assert env_type, "No environment specified"
     config = config_class()
-    config.environment(env_type)
+    if args["render_mode"]:
+        env_config = {"render_mode": args["render_mode"]}
+        config.environment(env_type, env_config=env_config)
+    else:
+        config.environment(env_type)
     config.api_stack(
         enable_rl_module_and_learner=True,
         enable_env_runner_and_connector_v2=True,
@@ -133,7 +145,11 @@ def create_ddt_config(
         use_gae=True,  # Must be true to use "truncate_episodes"
     )
     # Create a single agent RL module spec.
-    init_env = gym.make(config.env)  # type: ignore[arg-type]
+    if isinstance(config.env, str):
+        init_env = gym.make(config.env)
+    else:
+        assert not TYPE_CHECKING or config.env
+        init_env = gym.make(config.env.unwrapped.spec.id)  # pyright: ignore[reportOptionalMemberAccess]
     module_spec = RLModuleSpec(
         module_class=DDTModule,
         observation_space=init_env.observation_space,
@@ -166,7 +182,18 @@ def create_ddt_config(
             explore=False,
         ),
     )
-    config.callbacks(callbacks_class=DiscreteEvalCallback)
+    callbacks: list[type[DefaultCallbacks]] = [DiscreteEvalCallback]
+    if args["render_mode"]:
+        callbacks.append(EnvRenderCallback)
+
+    if callbacks:
+        if len(callbacks) == 1:
+            callback = callbacks[0]
+        else:
+            callback = make_multi_callbacks(callbacks)
+            # Necessary patch for new_api, cannot use this callback with new API
+            callback.on_episode_created = DefaultCallbacks.on_episode_created
+        config.callbacks(callbacks_class=callback)
 
     config.reporting(
         keep_per_episode_custom_metrics=True,  # If True calculate max min mean
@@ -263,6 +290,39 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
             EVAL_METRIC_RETURN_MEAN: eval_mean,
             DISC_EVAL_METRIC_RETURN_MEAN: disc_eval_mean,
         }
+        if EVALUATION_RESULTS in result:
+            # Store videos
+            if evaluation_videos_best := result[EVALUATION_RESULTS][ENV_RUNNER_RESULTS].get(
+                "episode_videos_best",
+            ):
+                metrics[EVALUATION_BEST_VIDEO] = {
+                    "video": evaluation_videos_best,
+                    "reward": result[EVALUATION_RESULTS][ENV_RUNNER_RESULTS][EPISODE_RETURN_MAX],
+                }
+            if evaluation_videos_worst := result[EVALUATION_RESULTS][ENV_RUNNER_RESULTS].get(
+                "episode_videos_worst",
+            ):
+                metrics[EVALUATION_WORST_VIDEO] = {
+                    "video": evaluation_videos_worst,
+                    "reward": result[EVALUATION_RESULTS][ENV_RUNNER_RESULTS][EPISODE_RETURN_MIN],
+                }
+            if discrete_evaluation_videos_best := result[EVALUATION_RESULTS]["discrete"][ENV_RUNNER_RESULTS].get(
+                "episode_videos_best"
+            ):
+                metrics[DISCRETE_EVALUATION_BEST_VIDEO] = {
+                    "video": discrete_evaluation_videos_best,
+                    "reward": result[EVALUATION_RESULTS]["discrete"][ENV_RUNNER_RESULTS][EPISODE_RETURN_MAX],
+                }
+            if discrete_evaluation_videos_worst := result[EVALUATION_RESULTS]["discrete"][ENV_RUNNER_RESULTS].get(
+                "episode_videos_worst"
+            ):
+                metrics[DISCRETE_EVALUATION_WORST_VIDEO] = {
+                    "video": discrete_evaluation_videos_worst,
+                    "reward": result[EVALUATION_RESULTS]["discrete"][ENV_RUNNER_RESULTS][EPISODE_RETURN_MIN],
+                }
+            # Check for NaN values, if they are not the evaluation metrics warn.
+            if any(isinstance(value, float) and math.isnan(value) for value in metrics.values()):
+                logger.warning("NaN values in metrics: %s", metrics)
 
         # Checkpoint & metrics
         if False and not disable_report and ray.train.get_context().get_world_rank() == 0:
@@ -295,14 +355,22 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
                 "roll": disc_running_eval_reward,
             },
         )
-    if "evaluation" not in result:
-        result["evaluation"] = algo.evaluate()
+    if EVALUATION_RESULTS not in result:
+        result[EVALUATION_RESULTS] = algo.evaluate()
     result["done"] = True
     if args.get("comment"):
         result["comment"] = args["comment"]
+    # Postprocess results and return
     try:
         reduced_results = reduce_results(
-            result, extra_keys_to_keep=None
+            result,
+            extra_keys_to_keep=[
+                # Should log as video! not array
+                # (EVALUATION_RESULTS, ENV_RUNNER_RESULTS, "episode_videos_best"),
+                # (EVALUATION_RESULTS, ENV_RUNNER_RESULTS, "episode_videos_worst"),
+                # (EVALUATION_RESULTS, "discrete", ENV_RUNNER_RESULTS, "episode_videos_best"),
+                # (EVALUATION_RESULTS, "discrete", ENV_RUNNER_RESULTS, "episode_videos_worst"),
+            ],
         )  # if not args["test"] else [(LEARNER_RESULTS,)])
     except Exception:
         logger.exception("Failed to reduce results")
@@ -314,7 +382,7 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
 # NOTE: This should not overlap!
 RESULTS_TO_KEEP = {
     (ENV_RUNNER_RESULTS, EPISODE_RETURN_MEAN),
-    (ENV_RUNNER_RESULTS, NUM_EPISODES),
+    # (ENV_RUNNER_RESULTS, NUM_EPISODES),
     (EVALUATION_RESULTS, ENV_RUNNER_RESULTS, EPISODE_RETURN_MEAN),
     (EVALUATION_RESULTS, "discrete", ENV_RUNNER_RESULTS, EPISODE_RETURN_MEAN),
     ("comment",),
@@ -338,7 +406,9 @@ def _find_item(obj: dict[str, Any], keys: list[str]) -> Any:
     return value
 
 
-def reduce_results(results: dict[str, Any], extra_keys_to_keep: Optional[list[tuple[str]]] = None) -> dict[str, Any]:
+def reduce_results(
+    results: dict[str, Any], extra_keys_to_keep: Optional[list[tuple[str, ...]]] = None
+) -> dict[str, Any]:
     # from omegaconf import OmegaConf
     # res = OmegaConf.create(results, flags={"allow_objects": True})
     # return OmegaConf.to_container(OmegaConf.merge((OmegaConf.select(res, key) for key in RESULTS_TO_KEEP)))

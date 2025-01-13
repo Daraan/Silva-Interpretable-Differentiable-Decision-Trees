@@ -24,6 +24,7 @@ from ray.tune.logger import (  # noqa: F401
     TBXLoggerCallback,
 )
 
+from interpretable_ddts.callbacks.adv_comet_callback import AdvCometLoggerCallback
 from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
 from interpretable_ddts.runfiles.constants import DISC_EVAL_METRIC_RETURN_MEAN
 from interpretable_ddts.tools import comet_upload_offline_experiments
@@ -49,7 +50,7 @@ if __name__ == "__main__":
     parser.add_argument("-env", "--env_type", help="environment to run on", type=str, default="cart")
     parser.add_argument("-gpu", "--gpu", help="run on GPU?", action="store_true")
     parser.add_argument("-r", "--rule_list", help="Use rule list setup", action="store_true", default=False)
-    parser.add_argument("-s", "--seed", help="Seed", default=-1, type=int)
+    parser.add_argument("-s", "--seed", help="Seed", default=None, type=int)
     parser.add_argument("-J", "--num_jobs", help="Amount of jobs the Tuner does start", default=5, type=int)
     parser.add_argument(
         "-np",
@@ -85,11 +86,23 @@ if __name__ == "__main__":
         choices=["offline", "offline+upload", "0", "1", "False", "off", "on"],
         type=str,
     )
+    parser.add_argument(
+        "--render_mode",
+        "--render",
+        nargs="?",
+        const="rgb_array",
+        help="Render mode",
+        type=str,
+        default=None,
+        choices=["human", "rgb_array", "ansi"],
+    )
     parser.add_argument("--extra", help="extra arguments", nargs="+", choices=["silva_loss"])
     parser.add_argument("--use_silva_loss", "--silva_loss", help="Use Silva loss", action="store_true", default=False)
     parser.add_argument("--comment", "-c", help="Add comment to this run", type=str, default="")
 
     args = parser.parse_args()
+    if args.agent_type == "ddt" and args.num_hidden:
+        raise ValueError("Do not use --num_hidden with DDT")
     use_comet_offline = args.comet.lower().startswith("offline")
     if args.comet.lower() in ("0", "false", "off"):
         args.comet = False
@@ -101,9 +114,9 @@ if __name__ == "__main__":
 
     if args.seed == -1:
         args.seed = None
-    if args.env_type.lower() in ("lunar", "LunarLander-v2".lower()):
+    if args.env_type == "lunar":
         init_env = gym.make("LunarLander-v2")
-    elif args.env_type.lower() in ("cart", "CartPole-v1".lower()):
+    elif args.env_type == "cart":
         init_env = gym.make("CartPole-v1")
     else:
         # Allow different environments
@@ -152,6 +165,8 @@ if __name__ == "__main__":
         tags.append("silva_loss")
     if args.gpu:
         tags.append("gpu")
+    if args.rule_list:
+        tags.append("RuleList")
     if args.wandb:
         callbacks.append(
             WandbLoggerCallback(
@@ -172,13 +187,14 @@ if __name__ == "__main__":
     else:
         # could use wandb offline
         logger.info("Not logging to WandB")
-    if args.comet:
+    if args.comet or args.test:
         # API KEY
         from dotenv import load_dotenv
 
         load_dotenv(Path("~/.comet_api_key.env").expanduser())
 
-        comet_callback = CometLoggerCallback(
+        comet_callback = AdvCometLoggerCallback(
+            disabled=not args.comet and args.test,
             online=not use_comet_offline,  # do not upload
             project_name="test-project",  # "general" for Uncategorized Experiments
             workspace="dev-workspace" if args.test else None,
@@ -206,13 +222,22 @@ if __name__ == "__main__":
             auto_histogram_weight_logging=False,  # Default False
             auto_histogram_gradient_logging=False,  # Default False
             auto_histogram_activation_logging=False,  # Default False
+            # Custom keywords of Adv Callback
+            exclude_metrics=(
+                "time_since_restore",
+                "iterations_since_restore",
+                "timestamp",
+                "training_iteration",
+            ),
+            log_to_other=("comment", "cli_args/comment"),
+            log_cli_args=True,
         )
         # Metrics to exclude
         # keep only time_this_iter_s
         comet_callback._to_exclude.extend(
             ["time_since_restore", "iterations_since_restore", "timestamp", "training_iteration"]
         )
-        comet_callback._to_other.extend(["comment", "cli_args/comment"])
+        comet_callback._to_other.extend(["comment", "cli_args/comment", "cli_args"])
         callbacks.append(comet_callback)
     # Will use these resources per job
     # NOTE: Even if not used will allocate these resources per run
@@ -243,6 +268,7 @@ if __name__ == "__main__":
 
     if args.test and args.not_parallel:
         # will spew some warnings about train.report
+        print("-- TEST MODE --")
         if args.legacy:
             trainable({})
         else:
