@@ -5,18 +5,17 @@ import os
 import gymnasium as gym
 import logging
 from ray.air.integrations.comet import CometLoggerCallback
-from ray.rllib.algorithms import AlgorithmConfig
 from ray.rllib.algorithms.callbacks import DefaultCallbacks, make_multi_callbacks
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
-from ray.rllib.examples.envs.env_rendering_and_recording import EnvRenderCallback
 import torch
 
 import tempfile
 from interpretable_ddts.agents.ddt_catalog import DDTCatalog
 from interpretable_ddts.agents.ddt_ppo_module import DDTModule
 from interpretable_ddts.agents.ppo_learner import SilvaLearner
-from interpretable_ddts.agents.rllib_port.discrete_evaluation import DiscreteEvalCallback
+from interpretable_ddts.callbacks.algorithm.discrete_eval_callback import DiscreteEvalCallback
+from interpretable_ddts.callbacks.algorithm.env_render_callback import make_render_callback
 from interpretable_ddts.runfiles._pbar_updates import update_pbar
 from interpretable_ddts.runfiles.constants import (
     DISC_EVAL_METRIC_RETURN_MEAN,
@@ -184,7 +183,7 @@ def create_ddt_config(
     )
     callbacks: list[type[DefaultCallbacks]] = [DiscreteEvalCallback]
     if args["render_mode"]:
-        callbacks.append(EnvRenderCallback)
+        callbacks.append(make_render_callback())
 
     if callbacks:
         if len(callbacks) == 1:

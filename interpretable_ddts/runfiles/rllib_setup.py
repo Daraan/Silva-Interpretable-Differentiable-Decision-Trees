@@ -12,7 +12,6 @@ import gymnasium as gym
 import ray
 from packaging.version import parse as parse_version
 from ray import train, tune
-from ray.air.integrations.comet import CometLoggerCallback
 from ray.air.integrations.wandb import WandbLoggerCallback, setup_wandb
 from ray.experimental import tqdm_ray
 from ray.tune import CLIReporter
@@ -24,7 +23,7 @@ from ray.tune.logger import (  # noqa: F401
     TBXLoggerCallback,
 )
 
-from interpretable_ddts.callbacks.adv_comet_callback import AdvCometLoggerCallback
+from interpretable_ddts.callbacks.tuner.adv_comet_callback import AdvCometLoggerCallback
 from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
 from interpretable_ddts.runfiles.constants import DISC_EVAL_METRIC_RETURN_MEAN
 from interpretable_ddts.tools import comet_upload_offline_experiments
@@ -247,7 +246,7 @@ if __name__ == "__main__":
     # Use tune.with_parameters to pass large objects to the trainable
     # Create a dict to upload as hyperparameters
 
-    # -- Prepocess Parameters --
+    # -- Preprocess Parameters --
 
     upload_args = vars(args).copy()
     upload_args["extra"] = repr(args.extra)
