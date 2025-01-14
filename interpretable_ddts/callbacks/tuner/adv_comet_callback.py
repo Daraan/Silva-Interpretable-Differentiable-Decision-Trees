@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import sys
+import tempfile
 from typing import Dict, Iterable, List, Optional, TYPE_CHECKING
 from ray.air.integrations.comet import CometLoggerCallback
 from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
@@ -144,16 +145,20 @@ class AdvCometLoggerCallback(CometLoggerCallback):
         super().log_trial_result(iteration, trial, result)
         if videos:
             experiment = self._trial_experiments[trial]
+            # TODO: store in final file path; or extract video at the end to final path
             for key, data in videos.items():
                 video: list[int] = data["video"]  # type: ignore[arg-type]
                 stripped_key = (
                     key.replace(ENV_RUNNER_RESULTS + "/", "").replace("episode_videos_", "").replace("/", "_")
                 )
                 filename = f"videos/{stripped_key}.mp4"  # e.g. step0040_best.mp4
-                os.makedirs(os.path.dirname(filename), exist_ok=True)
-                numpy_to_video(video, video_filename=filename)
-                experiment.log_video(
-                    file=filename, step=step, metadata={"reward": data["reward"], "discrete": "discrete" in key}
-                )
-                print("Stored video", filename)
+                with tempfile.NamedTemporaryFile(suffix=".mp4", dir="temp_dir") as temp:
+                    # os.makedirs(os.path.dirname(filename), exist_ok=True)
+                    numpy_to_video(video, video_filename=temp.name)
+                    experiment.log_video(
+                        temp.name,
+                        name=filename,
+                        step=step,
+                        metadata={"reward": data["reward"], "discrete": "discrete" in key},
+                    )
             experiment.log_other("hasVideo", value=True)
