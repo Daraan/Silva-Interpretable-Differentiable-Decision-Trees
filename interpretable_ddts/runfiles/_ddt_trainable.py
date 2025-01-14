@@ -38,7 +38,6 @@ from ray.rllib.utils.metrics import (
     EPISODE_RETURN_MIN,
     EVALUATION_RESULTS,
     LEARNER_RESULTS,
-    NUM_EPISODES,
 )
 
 
@@ -177,7 +176,7 @@ def create_ddt_config(
         # NOTE: Policy gradient algorithms are able to find the optimal
         # policy, even if this is a stochastic one. Setting "explore=False" here
         # results in the evaluation workers not using this optimal policy!
-        evaluation_config=AlgorithmConfig.overrides(
+        evaluation_config=PPOConfig.overrides(
             explore=False,
         ),
     )

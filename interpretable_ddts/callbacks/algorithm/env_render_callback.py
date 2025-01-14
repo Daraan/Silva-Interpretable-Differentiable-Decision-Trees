@@ -112,12 +112,11 @@ class AdvEnvRenderCallback(DefaultCallbacks):
         # data would be sent to WandB.
         self.best_episode_and_return = (None, float("-inf"))
         self.worst_episode_and_return = (None, float("inf"))
-        print("Init setting to None", "id:", id(self))
         self._is_evaluating = None
         self._render_this_episode = None
 
-    def on_episode_start(
-        self,  # pyright: ignore[reportIncompatibleMethodOverride]
+    def on_episode_start(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self,
         *,
         episode: EpisodeType,
         env_runner: Optional["EnvRunner"] = None,
@@ -233,7 +232,6 @@ class AdvEnvRenderCallback(DefaultCallbacks):
         self._render_this_episode = None
         # Best video.
         if self.best_episode_and_return[0] is not None:
-            print("Logging best video")
             metrics_logger.log_value(
                 "episode_videos_best",
                 self.best_episode_and_return[0],

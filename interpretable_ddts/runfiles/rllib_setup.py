@@ -226,17 +226,13 @@ if __name__ == "__main__":
                 "time_since_restore",
                 "iterations_since_restore",
                 "timestamp",
-                "training_iteration",
+                # "training_iteration", #  needed for the callback
             ),
-            log_to_other=("comment", "cli_args/comment"),
+            log_to_other=("comment", "cli_args/comment", "cli_args"),
             log_cli_args=True,
         )
         # Metrics to exclude
         # keep only time_this_iter_s
-        comet_callback._to_exclude.extend(
-            ["time_since_restore", "iterations_since_restore", "timestamp", "training_iteration"]
-        )
-        comet_callback._to_other.extend(["comment", "cli_args/comment", "cli_args"])
         callbacks.append(comet_callback)
     # Will use these resources per job
     # NOTE: Even if not used will allocate these resources per run
