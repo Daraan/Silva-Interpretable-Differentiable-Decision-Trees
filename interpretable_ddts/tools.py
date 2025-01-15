@@ -336,13 +336,13 @@ _SCRIPT_TIMESTAMP = time.time()
 
 def trial_name_creator(trial: Trial) -> str:
     start_time = datetime.datetime.fromtimestamp(trial.run_metadata.start_time or _SCRIPT_TIMESTAMP)
-    start_time_str = start_time.strftime("%Y-%m-%dT%H:%M")
+    start_time_str = start_time.strftime("%Y-%m-%d_%H:%M")
     return "_".join(
         [
             trial.trainable_name,
             trial.evaluated_params["env"],
             trial.evaluated_params["module"],
-            trial.trial_id,
             start_time_str,
+            trial.trial_id,
         ]
     )
