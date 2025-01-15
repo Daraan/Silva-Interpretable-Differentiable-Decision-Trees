@@ -1,3 +1,4 @@
+import math
 from typing import Optional, TypedDict
 from typing_extensions import NotRequired
 
@@ -27,7 +28,11 @@ def update_pbar(
 ):
     try:
         if train_results:
-            if train_results and train_results["mean"] == train_results["max"]:
+            # Remember float("nan") != float("nan")
+            train_mean = train_results.get("mean", float("nan"))
+            train_max = train_results.get("max", float("nan"))
+
+            if train_mean == train_max or (math.isnan(train_mean) and math.isnan(train_max)):
                 train_results = train_results.copy()
                 train_results.pop("max")
             lines = [

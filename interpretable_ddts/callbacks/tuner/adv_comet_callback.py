@@ -3,8 +3,8 @@ import logging
 import math
 import sys
 import tempfile
-from typing import Dict, Iterable, List, Optional, TYPE_CHECKING
-from ray.air.integrations.comet import CometLoggerCallback
+from typing import ClassVar, Dict, Iterable, List, Optional, TYPE_CHECKING
+from ray.air.integrations.comet import CometLoggerCallback, flatten_dict
 from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 from ray.tune.experiment import Trial
 
@@ -73,6 +73,8 @@ class AdvCometLoggerCallback(CometLoggerCallback):
 
     _trial_experiments: dict[Trial, Experiment | OfflineExperiment]
 
+    _exclude_results: ClassVar[list[str]] = [*CometLoggerCallback._exclude_results, "cli_args/test"]
+
     def _cli_to_str(self, args: dict, prefix="--", sep=" ") -> str:
         return sep.join([f"{prefix}{k} {v}" for k, v in args.items()])
 
@@ -101,11 +103,68 @@ class AdvCometLoggerCallback(CometLoggerCallback):
             logging.warning("training_iteration must be in the results to log it")
         self._video_keys = video_keys
 
-    def log_trial_start(self, trial: Trial, **kwargs):
-        super().log_trial_start(trial, **kwargs)
+    def log_trial_start(self, trial: "Trial"):
+        """
+        Initialize an Experiment (or OfflineExperiment if self.online=False)
+        and start logging to Comet.
+
+        Args:
+            trial: Trial object.
+
+        Overwritten method to respect ignored/refactored keys.
+        nested to other keys will only have their deepest key logged.
+        """
+        from comet_ml import Experiment, OfflineExperiment
+        from comet_ml.config import set_global_experiment
+
+        if trial not in self._trial_experiments:
+            experiment_cls = Experiment if self.online else OfflineExperiment
+            experiment = experiment_cls(**self.experiment_kwargs)
+            self._trial_experiments[trial] = experiment
+            # Set global experiment to None to allow for multiple experiments.
+            set_global_experiment(None)
+        else:
+            experiment = self._trial_experiments[trial]
+
+        experiment.set_name(str(trial))
+        experiment.add_tags(self.tags)
+        experiment.log_other("Created from", "Ray")
+
+        # NOTE: Keys here at not flattened, cannot use "cli_args/test" as a key
+        # Unflattening only supports one level of nesting
+        config = trial.config.copy()
+        non_parameter_keys = self._to_exclude + self._to_other
+        flat_config = flatten_dict(config)
+        # get all the parent/child keys that are now in the flat config
+        nested_keys = [k for k in non_parameter_keys if k in flat_config and k not in config]
+
+        # find nested keys and
+        to_other = {}
+        for nested_key in nested_keys:
+            k1, k2 = nested_key.split("/")
+            if k1 in config and k2 in config[k1]:
+                v2 = config[k1].pop(k2)
+                if nested_key in self._to_other:
+                    if k2 in to_other:
+                        # Conflict, add to the parent key
+                        to_other[nested_key] = v2
+                    else:
+                        to_other[k2] = v2
+                if len(config[k1]) == 0:
+                    config.pop(k1)
+
         experiment = self._trial_experiments[trial]
+        experiment.log_parameters(config)
+        # Log the command line arguments
         if self._cli_args:
             experiment.log_other("args", self._cli_args)
+        # Log non nested config keys
+        for key in self._to_other:
+            if key in trial.config:
+                experiment.log_other(key, trial.config[key])
+        # Log nested config keys
+        if to_other:
+            experiment.log_others(to_other)
 
     def log_trial_result(self, iteration: int, trial: Trial, result: Dict):
         step = result["training_iteration"]

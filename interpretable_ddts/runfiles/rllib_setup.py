@@ -17,9 +17,7 @@ from ray.experimental import tqdm_ray
 from ray.tune import CLIReporter
 
 # NOTE: JSON, CSV, and Tensorboard loggers are created automatically by Tune
-from ray.tune.logger import (  # noqa: F401
-    CSVLoggerCallback,
-)
+from ray.tune.logger import CSVLoggerCallback  # noqa: F401
 
 from interpretable_ddts.callbacks.tuner.adv_comet_callback import AdvCometLoggerCallback
 from interpretable_ddts.callbacks.tuner.adv_json_logger_callback import AdvJsonLoggerCallback
@@ -36,7 +34,7 @@ RAY_VERSION = parse_version(ray.__version__)
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ray.tune.logger import LoggerCallback
+    from ray.tune.callback import Callback
 
 if __name__ == "__main__":
     # full parser see: https://github.com/ray-project/ray/blob/master/rllib/utils/test_utils.py#L61
@@ -102,6 +100,7 @@ if __name__ == "__main__":
     parser.add_argument("--comment", "-c", help="Add comment to this run", type=str, default="")
 
     args = parser.parse_args()
+    assert args.agent_type == "ddt", f"Only DDT is supported, got {args.agent_type}"
     if args.agent_type == "ddt" and args.num_hidden:
         raise ValueError("Do not use --num_hidden with DDT")
     use_comet_offline = args.comet.lower().startswith("offline")
@@ -157,7 +156,7 @@ if __name__ == "__main__":
         trainable = partial(build_and_train, use_pbar=True)
 
     # If videos are logged use custom callbacks for correct logging
-    callbacks: list[LoggerCallback] = (
+    callbacks: list[Callback] = (
         [
             AdvJsonLoggerCallback(),
             AdvTBXLoggerCallback(),
@@ -238,7 +237,7 @@ if __name__ == "__main__":
                 "timestamp",
                 # "training_iteration", #  needed for the callback
             ),
-            log_to_other=("comment", "cli_args/comment", "cli_args"),
+            log_to_other=("comment", "cli_args/comment", "cli_args/test", "cli_args/num_jobs"),
             log_cli_args=True,
         )
         # Metrics to exclude
@@ -256,8 +255,10 @@ if __name__ == "__main__":
 
     upload_args = vars(args).copy()
     upload_args["extra"] = repr(args.extra)
-    for key in ("test", "wandb", "comet", "comment", "not_parallel", "num_jobs", "silent"):
+    for key in ("wandb", "comet", "not_parallel", "silent"):
         del upload_args[key]
+    if args.agent_type == "ddt":
+        del upload_args["num_hidden"]
     if upload_args["process_number"] is None:
         del upload_args["process_number"]
 
