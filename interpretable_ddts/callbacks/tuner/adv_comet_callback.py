@@ -1,7 +1,6 @@
 from __future__ import annotations
 import logging
 import math
-import os
 import sys
 import tempfile
 from typing import Dict, Iterable, List, Optional, TYPE_CHECKING
@@ -9,12 +8,7 @@ from ray.air.integrations.comet import CometLoggerCallback
 from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 from ray.tune.experiment import Trial
 
-from interpretable_ddts.runfiles.constants import (
-    EVALUATION_BEST_VIDEO,
-    EVALUATION_WORST_VIDEO,
-    DISCRETE_EVALUATION_BEST_VIDEO,
-    DISCRETE_EVALUATION_WORST_VIDEO,
-)
+from interpretable_ddts.runfiles.constants import DEFAULT_VIDEO_KEYS
 from interpretable_ddts.tools import numpy_to_video
 
 
@@ -92,13 +86,7 @@ class AdvCometLoggerCallback(CometLoggerCallback):
         exclude_metrics: Optional[Iterable[str]] = None,
         log_to_other: Optional[Iterable[str]] = ("comment", "cli_args/comment"),
         log_cli_args: bool = True,
-        video_keys: Iterable[str] = (
-            # NOTE: stored as string not list of keys
-            EVALUATION_BEST_VIDEO,
-            EVALUATION_WORST_VIDEO,
-            DISCRETE_EVALUATION_BEST_VIDEO,
-            DISCRETE_EVALUATION_WORST_VIDEO,
-        ),
+        video_keys: Iterable[str] = DEFAULT_VIDEO_KEYS,  # NOTE: stored as string not list of keys
         **experiment_kwargs,
     ):
         super().__init__(online=online, tags=tags, save_checkpoints=save_checkpoints, **experiment_kwargs)  # pyright: ignore[reportArgumentType]

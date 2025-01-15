@@ -4,6 +4,7 @@ import argparse
 import os
 import gymnasium as gym
 import logging
+from ray.tune import logger as tune_logger
 from ray.air.integrations.comet import CometLoggerCallback
 from ray.rllib.algorithms.callbacks import DefaultCallbacks, make_multi_callbacks
 from ray.rllib.algorithms.ppo import PPOConfig
@@ -37,7 +38,6 @@ from ray.rllib.utils.metrics import (
     EPISODE_RETURN_MEAN,
     EPISODE_RETURN_MIN,
     EVALUATION_RESULTS,
-    LEARNER_RESULTS,
 )
 
 
@@ -201,7 +201,10 @@ def create_ddt_config(
     )
     config.debugging(
         # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.debugging.html#ray-rllib-algorithms-algorithm-config-algorithmconfig-debugging
-        # seed=args["seed"],
+        log_sys_usage=False,
+        # These loggers will log more metrics which are stored less-accessible in the ~/ray_results/logdir
+        # Using these could be useful if no Tuner is used
+        logger_config={"type": tune_logger.NoopLogger},
     )
     # Checks
     config.validate_train_batch_size_vs_rollout_fragment_length()
@@ -280,6 +283,8 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
             min(100, len(running_disc_eval_rewards)) or float("nan")  # nan for 0
         )
 
+        # NOTE: The csv logger will only log keys that are present in the first result,
+        #       i.e. the videos will not be logged if they are added later; but everytime otherwise!
         metrics = {
             TRAIN_METRIC_RETURN_MEAN: result[ENV_RUNNER_RESULTS].get(
                 EPISODE_RETURN_MEAN,

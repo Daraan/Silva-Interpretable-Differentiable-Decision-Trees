@@ -6,7 +6,7 @@ import os
 from functools import partial
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import gymnasium as gym
 import ray
@@ -19,11 +19,11 @@ from ray.tune import CLIReporter
 # NOTE: JSON, CSV, and Tensorboard loggers are created automatically by Tune
 from ray.tune.logger import (  # noqa: F401
     CSVLoggerCallback,
-    JsonLoggerCallback,
-    TBXLoggerCallback,
 )
 
 from interpretable_ddts.callbacks.tuner.adv_comet_callback import AdvCometLoggerCallback
+from interpretable_ddts.callbacks.tuner.adv_json_logger_callback import AdvJsonLoggerCallback
+from interpretable_ddts.callbacks.tuner.adv_tbx_logger_callback import AdvTBXLoggerCallback
 from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
 from interpretable_ddts.runfiles.constants import DISC_EVAL_METRIC_RETURN_MEAN
 from interpretable_ddts.tools import comet_upload_offline_experiments
@@ -35,6 +35,8 @@ RAY_VERSION = parse_version(ray.__version__)
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from ray.tune.logger import LoggerCallback
 
 if __name__ == "__main__":
     # full parser see: https://github.com/ray-project/ray/blob/master/rllib/utils/test_utils.py#L61
@@ -154,7 +156,15 @@ if __name__ == "__main__":
         config, module_spec = create_ddt_config(args)
         trainable = partial(build_and_train, use_pbar=True)
 
-    callbacks = []
+    # If videos are logged use custom callbacks for correct logging
+    callbacks: list[LoggerCallback] = (
+        [
+            AdvJsonLoggerCallback(),
+            AdvTBXLoggerCallback(),
+        ]
+        if args.render_mode
+        else []
+    )
     tags = ["dev", env_name, args.agent_type]
     if args.test:
         tags.append("test")
