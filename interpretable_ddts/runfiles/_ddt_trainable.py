@@ -201,6 +201,7 @@ def create_ddt_config(
     )
     config.debugging(
         # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.debugging.html#ray-rllib-algorithms-algorithm-config-algorithmconfig-debugging
+        seed=args["seed"],
         log_sys_usage=False,
         # These loggers will log more metrics which are stored less-accessible in the ~/ray_results/logdir
         # Using these could be useful if no Tuner is used
