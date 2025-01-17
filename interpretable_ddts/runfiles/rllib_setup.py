@@ -3,10 +3,10 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import sys
 from functools import partial
 from pathlib import Path
-import sys
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import gymnasium as gym
 import ray
@@ -16,16 +16,17 @@ from ray.air.integrations.wandb import WandbLoggerCallback, setup_wandb
 from ray.experimental import tqdm_ray
 from ray.tune import CLIReporter
 
+from ray_utilities.comet import comet_upload_offline_experiments  # isort: skip # comet should be imported before torch
+
+from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
+from interpretable_ddts.runfiles.constants import DISC_EVAL_METRIC_RETURN_MEAN
+from ray_utilities import trial_name_creator
 from ray_utilities.callbacks.tuner import (
-    AdvCSVLoggerCallback,
     AdvCometLoggerCallback,
+    AdvCSVLoggerCallback,
     AdvJsonLoggerCallback,
     AdvTBXLoggerCallback,
 )
-from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
-from interpretable_ddts.runfiles.constants import DISC_EVAL_METRIC_RETURN_MEAN
-from ray_utilities.comet import comet_upload_offline_experiments
-from ray_utilities import trial_name_creator
 
 os.environ["RAY_COLOR_PREFIX"] = "1"
 

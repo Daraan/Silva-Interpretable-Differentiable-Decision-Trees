@@ -1,37 +1,21 @@
 from __future__ import annotations
 
 import argparse
-import os
-import gymnasium as gym
 import logging
-from ray.tune import logger as tune_logger
+import math
+import os
+import tempfile
+from typing import TYPE_CHECKING, Any, Optional, TypeVar
+
+import gymnasium as gym
+import ray
+import torch
+from ray import train
 from ray.air.integrations.comet import CometLoggerCallback
+from ray.experimental import tqdm_ray
 from ray.rllib.algorithms.callbacks import DefaultCallbacks, make_multi_callbacks
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
-import torch
-
-import tempfile
-from interpretable_ddts.agents.ddt_catalog import DDTCatalog
-from interpretable_ddts.agents.ddt_ppo_module import DDTModule
-from interpretable_ddts.agents.ppo_learner import SilvaLearner
-from interpretable_ddts.callbacks.algorithm.discrete_eval_callback import DiscreteEvalCallback
-from interpretable_ddts.callbacks.algorithm.env_render_callback import make_render_callback
-from interpretable_ddts.runfiles._pbar_updates import update_pbar
-from interpretable_ddts.runfiles.constants import (
-    DISC_EVAL_METRIC_RETURN_MEAN,
-    EVAL_METRIC_RETURN_MEAN,
-    TRAIN_METRIC_RETURN_MEAN,
-    EVALUATION_BEST_VIDEO,
-    EVALUATION_WORST_VIDEO,
-    DISCRETE_EVALUATION_BEST_VIDEO,
-    DISCRETE_EVALUATION_WORST_VIDEO,
-)
-from ray_utilities import is_pbar
-
-import ray
-from ray import train
-from ray.experimental import tqdm_ray
 from ray.rllib.utils.metrics import (
     ENV_RUNNER_RESULTS,
     EPISODE_RETURN_MAX,
@@ -39,10 +23,24 @@ from ray.rllib.utils.metrics import (
     EPISODE_RETURN_MIN,
     EVALUATION_RESULTS,
 )
+from ray.tune import logger as tune_logger
 
-
-import math
-from typing import Any, Optional, TypeVar, TYPE_CHECKING
+from interpretable_ddts.agents.ddt_catalog import DDTCatalog
+from interpretable_ddts.agents.ddt_ppo_module import DDTModule
+from interpretable_ddts.agents.ppo_learner import SilvaLearner
+from interpretable_ddts.runfiles._pbar_updates import update_pbar
+from interpretable_ddts.runfiles.constants import (
+    DISC_EVAL_METRIC_RETURN_MEAN,
+    DISCRETE_EVALUATION_BEST_VIDEO,
+    DISCRETE_EVALUATION_WORST_VIDEO,
+    EVAL_METRIC_RETURN_MEAN,
+    EVALUATION_BEST_VIDEO,
+    EVALUATION_WORST_VIDEO,
+    TRAIN_METRIC_RETURN_MEAN,
+)
+from ray_utilities import is_pbar
+from ray_utilities.callbacks.algorithm.discrete_eval_callback import DiscreteEvalCallback
+from ray_utilities.callbacks.algorithm.env_render_callback import make_render_callback
 
 logger = logging.getLogger(__name__)
 

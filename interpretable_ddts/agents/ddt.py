@@ -1,7 +1,8 @@
 # Created by Andrew Silva on 2/21/19
 from __future__ import annotations
+
 import logging
-from typing import Optional, Sequence, cast, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Sequence, cast
 
 import numpy as np
 import torch

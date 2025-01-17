@@ -1,6 +1,6 @@
-from ray.rllib.core.models.catalog import Catalog
-
 import functools
+
+from ray.rllib.core.models.catalog import Catalog
 
 
 class DDTCatalog(Catalog):

@@ -2,16 +2,15 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
-from torch import nn
 import torch.nn.functional as F
-from torch import optim
+from torch import nn, optim
 from torch.distributions import Categorical
 
 if TYPE_CHECKING:
+    from interpretable_ddts.agents.ddt_agent import AgentBase
     from interpretable_ddts.opt_helpers.replay_buffer import (
         ReplayBufferSingleAgent as SilvaReplayBuffer,
     )
-    from interpretable_ddts.agents.ddt_agent import AgentBase
 
 
 class PPO:

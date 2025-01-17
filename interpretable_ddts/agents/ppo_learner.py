@@ -1,21 +1,19 @@
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
 import torch
-
-from ray.rllib.algorithms.ppo.torch.ppo_torch_learner import PPOTorchLearner
-from ray.rllib.utils.typing import ModuleID, TensorType
-from ray.rllib.core.columns import Columns
-from ray.rllib.evaluation.postprocessing import Postprocessing
-from ray.rllib.core.learner.learner import POLICY_LOSS_KEY, VF_LOSS_KEY, ENTROPY_KEY
-from ray.rllib.utils.torch_utils import explained_variance
 from ray.rllib.algorithms.ppo.ppo import (
     LEARNER_RESULTS_KL_KEY,
     LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY,
     LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY,
     PPOConfig,
 )
-
+from ray.rllib.algorithms.ppo.torch.ppo_torch_learner import PPOTorchLearner
+from ray.rllib.core.columns import Columns
+from ray.rllib.core.learner.learner import ENTROPY_KEY, POLICY_LOSS_KEY, VF_LOSS_KEY
+from ray.rllib.evaluation.postprocessing import Postprocessing
+from ray.rllib.utils.torch_utils import explained_variance
+from ray.rllib.utils.typing import ModuleID, TensorType
 
 logger = logging.getLogger(__name__)
 

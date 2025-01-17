@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import re
-from typing import Iterable, Literal, Union, Optional, TYPE_CHECKING
-import pandas as pd
+from pathlib import Path
+from typing import TYPE_CHECKING, Iterable, Literal, Optional, Union
 
+import pandas as pd
 
 if TYPE_CHECKING:
     from pandas._typing import AggFuncTypeBase

@@ -1,5 +1,6 @@
 import math
 from typing import Optional, TypedDict
+
 from typing_extensions import NotRequired
 
 

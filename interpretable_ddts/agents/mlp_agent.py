@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import copy
 from pathlib import Path
-from ._agent_interface import AgentBase
+from typing import Optional, Union
+
 import torch
 from torch import nn
 from torch.distributions import Categorical
-from interpretable_ddts.opt_helpers import replay_buffer, ppo_update
-import copy
-from typing import Union, Optional
+
+from interpretable_ddts.opt_helpers import ppo_update, replay_buffer
+
+from ._agent_interface import AgentBase
 
 
 class BaselineFCNet(nn.Module):

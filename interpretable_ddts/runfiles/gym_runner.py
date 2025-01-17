@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import nullcontext
 import copy
+from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Optional, TypeGuard, Union, cast
 
@@ -21,12 +21,14 @@ from interpretable_ddts.agents.mlp_agent import MLPAgent
 from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
 from interpretable_ddts.runfiles._pbar_updates import update_pbar
 from interpretable_ddts.runfiles.constants import ENV_RUNNER_RESULTS, EPISODE_RETURN_MEAN, EVALUATION_RESULTS
-from ray_utilities import seed_everything, GYM_V_0_26
+from ray_utilities import GYM_V_0_26, seed_everything
 
 if TYPE_CHECKING:
     from multiprocessing.synchronize import Lock
+
+    from gymnasium.core import ActType, ObsType
     from ray.rllib.core.rl_module.rl_module import RLModuleSpec  # for performance import only if used  # noqa: TC004
-    from gymnasium.core import ObsType, ActType
+
     from interpretable_ddts.agents._agent_interface import AgentBase
 
 
@@ -212,6 +214,7 @@ def main(
 
 def create_rlib_agent(args, init_env: gym.Env):
     from ray.rllib.core.rl_module.rl_module import RLModuleSpec  # noqa: F811
+
     from interpretable_ddts.agents.ddt_catalog import DDTCatalog  # noqa: F811
     from interpretable_ddts.agents.ddt_ppo_module import LegacyDDTModule  # noqa: F811
 

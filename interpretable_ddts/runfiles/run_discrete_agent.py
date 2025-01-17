@@ -1,27 +1,26 @@
 # Created by Andrew Silva on 5/10/19
 from __future__ import annotations
 
-from datetime import datetime
-import re
 import logging
+import os
+import re
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Sequence, TypedDict, cast, overload
-from typing_extensions import Literal, NotRequired
-from joblib import Parallel, delayed
+
+import gymnasium as gym
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import torch
-import numpy as np
-import os
-import gymnasium as gym
+from joblib import Parallel, delayed
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+from typing_extensions import Literal, NotRequired
 
-from interpretable_ddts.opt_helpers.discretization import convert_to_discrete
-from interpretable_ddts.agents.ddt_agent import DDTAgent
 from interpretable_ddts.agents.ddt import DDT
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.tree import plot_tree
+from interpretable_ddts.agents.ddt_agent import DDTAgent
+from interpretable_ddts.opt_helpers.discretization import convert_to_discrete
 from interpretable_ddts.opt_helpers.sklearn_to_ddt import ddt_init_from_dt
-import matplotlib.pyplot as plt
-
 from ray_utilities import seed_everything
 
 try:

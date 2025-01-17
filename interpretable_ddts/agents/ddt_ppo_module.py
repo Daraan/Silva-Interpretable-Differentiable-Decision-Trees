@@ -30,6 +30,7 @@ _deprecation_logger.setLevel(__old_level)
 
 if TYPE_CHECKING:
     import gymnasium as gym
+
     from interpretable_ddts.agents.ddt import LeafInfo
 
 

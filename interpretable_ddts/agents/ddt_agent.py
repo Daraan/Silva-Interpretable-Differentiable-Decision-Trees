@@ -1,16 +1,18 @@
 # Created by Andrew Silva on 8/28/19
 from __future__ import annotations
-import logging
 
-import torch
-from ._agent_interface import AgentBase
-from interpretable_ddts.agents.ddt import DDT
-from interpretable_ddts.opt_helpers import replay_buffer, ppo_update
+import logging
 import os
-import numpy as np
 from typing import TYPE_CHECKING, Optional, Union
 
+import numpy as np
+import torch
 from packaging import version
+
+from interpretable_ddts.agents.ddt import DDT
+from interpretable_ddts.opt_helpers import ppo_update, replay_buffer
+
+from ._agent_interface import AgentBase
 
 if TYPE_CHECKING:
     from pathlib import Path

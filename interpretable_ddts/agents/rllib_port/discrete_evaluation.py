@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from ray.rllib.evaluation.metrics import summarize_episodes
 from ray.rllib.utils.metrics import (
     ENV_RUNNER_RESULTS,
@@ -10,13 +13,12 @@ from ray.rllib.utils.metrics import (
 )
 from ray.rllib.utils.metrics.metrics_logger import MetricsLogger
 
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
-    from interpretable_ddts.agents.ddt_ppo_module import DDTModule
     from ray.rllib.algorithms import Algorithm
     from ray.rllib.env.env_runner_group import EnvRunnerGroup
     from ray.rllib.env.single_agent_env_runner import SingleAgentEnvRunner
+
+    from interpretable_ddts.agents.ddt_ppo_module import DDTModule
 
 
 def discrete_evaluate_on_local_env_runner(
