@@ -1,38 +1,14 @@
 from __future__ import annotations
 
 import argparse
-import datetime
-import os
-import cv2
 from pathlib import Path
 import re
-import time
-from typing import Iterable, Literal, TypeVar, Union, Optional, TYPE_CHECKING, overload
+from typing import Iterable, Literal, Union, Optional, TYPE_CHECKING
 import pandas as pd
-import random
-import numpy as np
-import torch
-import torch.cuda
-from tqdm import tqdm
-from ray.experimental import tqdm_ray
 
-from interpretable_ddts.runfiles.constants import COMET_OFFLINE_DIRECTORY
 
 if TYPE_CHECKING:
-    from ray.tune.callback import Trial
     from pandas._typing import AggFuncTypeBase
-    from typing_extensions import TypeIs
-
-import gymnasium as gym
-
-from packaging.version import parse as parse_version, Version
-
-GYM_VERSION = parse_version(gym.__version__)
-
-GYM_VERSION = parse_version(gym.__version__)
-GYM_V_0_26 = GYM_VERSION >= Version("0.26")
-"""First gymnasium version and above"""
-GYM_V1 = GYM_VERSION >= Version("1.0.0")
 
 RE_PARSE_FILENAME = re.compile(
     r"(?P<parent_dir>.+/)?"  # likely for model files
@@ -180,124 +156,10 @@ def create_df_index(metadata: Iterable[dict[str, str]]):
     )
 
 
-@overload
-def _split_seed(seed: None) -> tuple[None, None]: ...
-
-
-@overload
-def _split_seed(seed: int) -> tuple[int, int]: ...
-
-
-def _split_seed(seed: Optional[int]) -> tuple[int, int] | tuple[None, None]:
-    if seed is None:
-        return None, None
-    gen = random.Random(seed)
-    return gen.randrange(2**32), gen.randrange(2**32)
-
-
-def seed_everything(env, seed: Optional[int], *, torch_manual=False):
-    """
-    Args:
-        torch_manual: If True, will set torch.manual_seed and torch.cuda.manual_seed_all
-            In some cases setting this causes bad models, so it is False by default
-    """
-    # no not reuse seed if its not None
-    seed, next_seed = _split_seed(seed)
-    random.seed(seed)
-
-    seed, next_seed = _split_seed(next_seed)
-    np.random.seed(seed)
-
-    # os.environ["PYTHONHASHSEED"] = str(seed)
-    if next_seed is None:
-        torch.seed()
-        torch.cuda.seed()
-    elif torch_manual:
-        seed, next_seed = _split_seed(next_seed)
-        torch.manual_seed(
-            seed,
-        )  # setting torch manual seed causes bad models, # ok seed 124
-        seed, next_seed = _split_seed(next_seed)
-        torch.cuda.manual_seed_all(seed)
-    if env:
-        if not GYM_V_0_26:  # gymnasium does not have this
-            seed, next_seed = _split_seed(next_seed)
-            env.seed(seed)
-        seed, next_seed = _split_seed(next_seed)
-        env.action_space.seed(seed)
-
-    seed, next_seed = _split_seed(next_seed)
-    return seed, next_seed
-
-
-_T = TypeVar("_T")
-
-
-def is_pbar(pbar: Iterable[_T]) -> TypeIs[tqdm_ray.tqdm | tqdm[_T]]:
-    return isinstance(pbar, (tqdm_ray.tqdm, tqdm))
-
-
-def comet_upload_offline_experiments():
-    import comet_ml
-    import logging
-
-    archives = list(map(str, Path(COMET_OFFLINE_DIRECTORY).glob("*.zip")))
-    if not archives:
-        logging.info("No archives to upload")
-        return
-    logging.info("Uploading Archives: %s", archives)
-    comet_ml.offline.main_upload(archives, force_upload=False)
-    new_dir = Path(COMET_OFFLINE_DIRECTORY) / "uploaded"
-    new_dir.mkdir(exist_ok=True)
-    for path in Path(os.environ["COMET_OFFLINE_DIRECTORY"]).glob("*.zip"):
-        path.rename(new_dir / path.name)
-
-
 def nested_dict_getitem(d: dict, keys: Iterable[str]) -> dict:
     for key in keys:
         d = d[key]
     return d
-
-
-def numpy_to_video(data: list, video_filename: str = "output.mp4", frame_rate: int = 10):
-    """
-
-    Note:
-        About data.shape
-
-        # Create a video from the images by simply stacking them AND
-        # adding an extra B=1 dimension. Note that Tune's WandB logger currently
-        # knows how to log the different data types by the following rules:
-        # array is shape=3D -> An image (c, h, w).
-        # array is shape=4D -> A batch of images (B, c, h, w).
-        # array is shape=5D -> A video (batch=1, time, channel, height width),
-        # where L is the length of the video.
-        # -> Make our video ndarray a 5D one.
-    """
-    # Create a dummy video file in MP4 format
-    video = np.squeeze(data)
-    if video.shape[-1] not in (1, 3):
-        # For CV2, the channel should be the last dimension
-        assert video.shape[-3] in (1, 3)
-        video = video.transpose(0, 2, 3, 1)
-    length, frame_height, frame_width, _ = video.shape
-
-    fourcc = cv2.VideoWriter_fourcc(*"avc1")  # type: ignore[attr-defined]
-    out = cv2.VideoWriter(
-        video_filename,
-        fourcc=fourcc,
-        fps=frame_rate,
-        frameSize=(frame_width, frame_height),
-    )
-
-    if video.ndim == 4:
-        for frame in video:
-            out.write(frame)
-    else:
-        for frame in video.reshape(-1, *video.shape[-3:]):
-            out.write(frame)
-
-    out.release()
 
 
 # ----
@@ -330,19 +192,3 @@ if __name__ == "__main__":
                 file.unlink()
         else:
             print("Aborted")
-
-_SCRIPT_TIMESTAMP = time.time()
-
-
-def trial_name_creator(trial: Trial) -> str:
-    start_time = datetime.datetime.fromtimestamp(trial.run_metadata.start_time or _SCRIPT_TIMESTAMP)
-    start_time_str = start_time.strftime("%Y-%m-%d_%H:%M")
-    return "_".join(
-        [
-            trial.trainable_name,
-            trial.evaluated_params["env"],
-            trial.evaluated_params["module"],
-            start_time_str,
-            trial.trial_id,
-        ]
-    )

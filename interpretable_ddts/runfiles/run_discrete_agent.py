@@ -22,12 +22,14 @@ from sklearn.tree import plot_tree
 from interpretable_ddts.opt_helpers.sklearn_to_ddt import ddt_init_from_dt
 import matplotlib.pyplot as plt
 
+from ray_utilities import seed_everything
+
 try:
     from interpretable_ddts.runfiles.sc2_minigame_runner import run_episode as sc_episode
 except ModuleNotFoundError as e:
     logging.error("Cannot import Starcraft due to %s", e)
 from interpretable_ddts.runfiles.gym_runner import run_episode as gym_episode
-from interpretable_ddts.tools import RE_PARSE_FILENAME_OLD, create_df_index, match_filename, seed_everything
+from interpretable_ddts.tools import RE_PARSE_FILENAME_OLD, create_df_index, match_filename
 
 RE_PARSE_FILENAME = re.compile(
     r"(?P<parent_dir>.+?/)?"

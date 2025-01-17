@@ -14,8 +14,6 @@ from gymnasium.envs.box2d.lunar_lander import LunarLander
 from gymnasium.envs.classic_control.cartpole import CartPoleEnv
 from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo  # pyright: ignore[reportPrivateImportUsage]
 from joblib import Parallel, delayed
-from packaging.version import Version
-from packaging.version import parse as parse_version
 from tqdm import tqdm
 
 from interpretable_ddts.agents.ddt_agent import DDTAgent
@@ -23,19 +21,13 @@ from interpretable_ddts.agents.mlp_agent import MLPAgent
 from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
 from interpretable_ddts.runfiles._pbar_updates import update_pbar
 from interpretable_ddts.runfiles.constants import ENV_RUNNER_RESULTS, EPISODE_RETURN_MEAN, EVALUATION_RESULTS
-from interpretable_ddts.tools import seed_everything
+from ray_utilities import seed_everything, GYM_V_0_26
 
 if TYPE_CHECKING:
     from multiprocessing.synchronize import Lock
     from ray.rllib.core.rl_module.rl_module import RLModuleSpec  # for performance import only if used  # noqa: TC004
     from gymnasium.core import ObsType, ActType
     from interpretable_ddts.agents._agent_interface import AgentBase
-
-
-GYM_VERSION = parse_version(gym.__version__)
-GYM_V_0_26 = GYM_VERSION >= Version("0.26")
-"""First gymnasium version"""
-GYM_V1 = GYM_VERSION >= Version("1.0.0")
 
 
 def run_episode(

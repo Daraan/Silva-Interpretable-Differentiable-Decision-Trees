@@ -27,7 +27,7 @@ from interpretable_ddts.runfiles.constants import (
     DISCRETE_EVALUATION_BEST_VIDEO,
     DISCRETE_EVALUATION_WORST_VIDEO,
 )
-from interpretable_ddts.tools import is_pbar
+from ray_utilities import is_pbar
 
 import ray
 from ray import train

@@ -16,16 +16,16 @@ from ray.air.integrations.wandb import WandbLoggerCallback, setup_wandb
 from ray.experimental import tqdm_ray
 from ray.tune import CLIReporter
 
-# NOTE: JSON, CSV, and Tensorboard loggers are created automatically by Tune
-from ray.tune.logger import CSVLoggerCallback  # noqa: F401
-
-from interpretable_ddts.callbacks.tuner.adv_comet_callback import AdvCometLoggerCallback
-from interpretable_ddts.callbacks.tuner.adv_json_logger_callback import AdvJsonLoggerCallback
-from interpretable_ddts.callbacks.tuner.adv_tbx_logger_callback import AdvTBXLoggerCallback
+from ray_utilities.callbacks.tuner import (
+    AdvCSVLoggerCallback,
+    AdvCometLoggerCallback,
+    AdvJsonLoggerCallback,
+    AdvTBXLoggerCallback,
+)
 from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
 from interpretable_ddts.runfiles.constants import DISC_EVAL_METRIC_RETURN_MEAN
-from interpretable_ddts.tools import comet_upload_offline_experiments
-from interpretable_ddts.tools import trial_name_creator
+from ray_utilities.comet import comet_upload_offline_experiments
+from ray_utilities import trial_name_creator
 
 os.environ["RAY_COLOR_PREFIX"] = "1"
 
@@ -156,10 +156,12 @@ if __name__ == "__main__":
         trainable = partial(build_and_train, use_pbar=True)
 
     # If videos are logged use custom callbacks for correct logging
+    # NOTE: JSON, CSV, and Tensorboard loggers are created automatically by Tune if not disabled
     callbacks: list[Callback] = (
         [
             AdvJsonLoggerCallback(),
             AdvTBXLoggerCallback(),
+            AdvCSVLoggerCallback(),
         ]
         if args.render_mode
         else []
