@@ -16,7 +16,7 @@ from ray.air.integrations.wandb import WandbLoggerCallback, setup_wandb
 from ray.experimental import tqdm_ray
 from ray.tune import CLIReporter
 
-from ray_utilities.comet import comet_upload_offline_experiments  # isort: skip # comet should be imported before torch
+from ray_utilities.comet import comet_upload_offline_experiments, get_default_workspace  # isort: skip # comet should be imported before torch
 
 from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
 from interpretable_ddts.runfiles.constants import DISC_EVAL_METRIC_RETURN_MEAN
@@ -204,11 +204,22 @@ if __name__ == "__main__":
 
         load_dotenv(Path("~/.comet_api_key.env").expanduser())
 
+        workspace_name = (
+            "dev-workspace"
+            if args.test
+            else (
+                get_default_workspace()
+                if args.comet and not use_comet_offline
+                else None  # if disabled no need to query
+            )
+        )
+        project_name = "_".join([args.agent_type, env_name, "-dev", ("-test" if args.test else "")])
+
         comet_callback = AdvCometLoggerCallback(
             disabled=not args.comet and args.test,
             online=not use_comet_offline,  # do not upload
-            project_name="test-project",  # "general" for Uncategorized Experiments
-            workspace="dev-workspace" if args.test else None,
+            project_name=project_name,  # "general" for Uncategorized Experiments
+            workspace=workspace_name,
             save_checkpoints=False,
             tags=tags,
             # Other keywords see: https://www.comet.com/docs/v2/api-and-sdk/python-sdk/reference/Experiment/
