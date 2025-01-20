@@ -46,6 +46,9 @@ class PPO:
         else:
             num_iters = 4
             batch_size = 8
+        # Aboves batch_size and iterations appear to be much to small for effective training
+        num_iters = 20  # Note: Adjustment of original code
+        batch_size = 36
         for _iteration in range(num_iters):
             total_action_loss = torch.Tensor([0])
             total_value_loss = torch.Tensor([0])
