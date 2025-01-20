@@ -99,6 +99,7 @@ if __name__ == "__main__":
     parser.add_argument("--extra", help="extra arguments", nargs="+", choices=["silva_loss"])
     parser.add_argument("--use_silva_loss", "--silva_loss", help="Use Silva loss", action="store_true", default=False)
     parser.add_argument("--comment", "-c", help="Add comment to this run", type=str, default="")
+    parser.add_argument("--tags", nargs="+", help="Add tags to this run to be used with wandb and comet", default=())
 
     args = parser.parse_args()
     assert args.agent_type == "ddt", f"Only DDT is supported, got {args.agent_type}"
@@ -167,7 +168,7 @@ if __name__ == "__main__":
         if args.render_mode
         else []
     )
-    tags = ["dev", env_name, args.agent_type]
+    tags = ["dev", env_name, args.agent_type, *args.tags]
     if args.test:
         tags.append("test")
     if args.legacy:
@@ -226,19 +227,17 @@ if __name__ == "__main__":
             auto_metric_step_rate=10,  # How often batch metrics are logged. Default 10
             auto_histogram_epoch_rate=1,  # How often histograms are logged. Default 1
             parse_args=False,
-            log_git_metadata=(
-                not args.test and (args.num_jobs <= 10 or use_comet_offline)
-            ),  # disabled by rllib; might cause throttling
+            log_git_metadata=not args.test,  # disabled by rllib; might cause throttling -> needed for Reproduce button
             log_git_patch=False,
             log_graph=False,  # computation graph, Default True
-            log_code=not args.test,  # Default True
+            log_code=False,  # Default True; use if not using git_metadata
             log_env_details=True,
             # Subkeys of env details:
             log_env_network=False,
             log_env_disk=False,
-            log_env_gpu=args.num_jobs <= 5 and args.gpu,
+            log_env_gpu=args.num_jobs <= 5 and args.gpu and not args.test,
             log_env_host=False,
-            log_env_cpu=args.num_jobs <= 5,
+            log_env_cpu=args.num_jobs <= 5 and not args.test,
             # ---
             auto_log_co2=False,  # needs codecarbon
             auto_histogram_weight_logging=False,  # Default False
