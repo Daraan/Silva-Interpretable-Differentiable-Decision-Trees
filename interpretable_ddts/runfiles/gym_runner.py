@@ -171,7 +171,7 @@ def main(
                 discrete=True,
             )
             discrete_running_reward_array.append(discrete_returned_object[0])
-            agent.end_episode(reward, discrete_returned_object[0])  # pyright: ignore[reportCallIssue]
+            agent.end_episode(reward, discrete_reward=discrete_returned_object[0])
         else:
             agent.end_episode(reward)
 
