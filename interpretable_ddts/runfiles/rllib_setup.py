@@ -8,7 +8,6 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import gymnasium as gym
 import ray
 from packaging.version import parse as parse_version
 from ray import train, tune
@@ -23,10 +22,9 @@ from interpretable_ddts.runfiles.constants import DISC_EVAL_METRIC_RETURN_MEAN
 from ray_utilities import trial_name_creator
 from ray_utilities.callbacks.tuner import (
     AdvCometLoggerCallback,
-    AdvCSVLoggerCallback,
-    AdvJsonLoggerCallback,
-    AdvTBXLoggerCallback,
+    create_tuner_callbacks,
 )
+from ray_utilities.environment import create_env
 
 os.environ["RAY_COLOR_PREFIX"] = "1"
 
@@ -41,17 +39,21 @@ if __name__ == "__main__":
     # full parser see: https://github.com/ray-project/ray/blob/master/rllib/utils/test_utils.py#L61
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--agent_type", help="architecture of agent to run", type=str, default="ddt")
-    parser.add_argument("-e", "--episodes", help="how many episodes", type=int, default=1000)
-    parser.add_argument("-l", "--num_leaves", help="number of leaves for DDT/DRL ", type=int, default=8)
-    parser.add_argument(
-        "-L", "--legacy", help="Use original code without an algorithm", default=False, action="store_true"
-    )
-    parser.add_argument("-n", "--num_hidden", help="number of hidden layers for MLP ", type=int, default=0)
     parser.add_argument("-env", "--env_type", help="environment to run on", type=str, default="cart")
-    parser.add_argument("-gpu", "--gpu", help="run on GPU?", action="store_true")
-    parser.add_argument("-r", "--rule_list", help="Use rule list setup", action="store_true", default=False)
+    parser.add_argument("-e", "--episodes", help="how many episodes", type=int, default=1000)
     parser.add_argument("-s", "--seed", help="Seed", default=None, type=int)
+    parser.add_argument("--test", "--dry-run", help="Do not save any models", action="store_true", default=False)
+
+    # Ressources
     parser.add_argument("-J", "--num_jobs", help="Amount of jobs the Tuner does start", default=5, type=int)
+    parser.add_argument("-gpu", "--gpu", help="run on GPU?", action="store_true")
+    parser.add_argument(
+        "-mp",
+        "--parallel",
+        help="Use multiple CPUs per worker",
+        action="store_true",
+        default=False,
+    )
     parser.add_argument(
         "-np",
         "--not_parallel",
@@ -60,32 +62,7 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
     )
-    parser.add_argument(
-        "-mp",
-        "--parallel",
-        help="Use multiple CPUs per worker",
-        action="store_true",
-        default=False,
-    )
-    parser.add_argument("-nd", "--not_discrete", help="Disable non-discrete eval", action="store_true", default=False)
-    parser.add_argument("-p", "--process_number", help="Process number", type=int, default=None)
-    parser.add_argument(
-        "--silent",
-        help="supress prints",
-        action="store_true",
-        default=False,
-    )
-    parser.add_argument("--test", "--dry-run", help="Do not save any models", action="store_true", default=False)
-    parser.add_argument("--wandb", "-wb", help="Log to WandB", action="store_true", default=False)
-    parser.add_argument(
-        "--comet",
-        nargs="?",
-        help="Log to Comet",
-        const="1",
-        default="off",
-        choices=["offline", "offline+upload", "0", "1", "False", "off", "on"],
-        type=str,
-    )
+
     parser.add_argument(
         "--render_mode",
         "--render",
@@ -96,16 +73,47 @@ if __name__ == "__main__":
         default=None,
         choices=["human", "rgb_array", "ansi"],
     )
-    parser.add_argument("--extra", help="extra arguments", nargs="+", choices=["silva_loss"])
-    parser.add_argument("--use_silva_loss", "--silva_loss", help="Use Silva loss", action="store_true", default=False)
+
+    # Loggers
+    parser.add_argument("--wandb", "-wb", help="Log to WandB", action="store_true", default=False)
+    parser.add_argument(
+        "--comet",
+        nargs="?",
+        help="Log to Comet",
+        const="1",
+        default="off",
+        choices=["offline", "offline+upload", "0", "1", "False", "off", "on"],
+        type=str,
+    )
     parser.add_argument("--comment", "-c", help="Add comment to this run", type=str, default="")
     parser.add_argument("--tags", nargs="+", help="Add tags to this run to be used with wandb and comet", default=())
 
+    # Outdated / deprecated / unused
+    parser.add_argument("-p", "--process_number", help="Process number", type=int, default=None)
+    parser.add_argument("-nd", "--not_discrete", help="Disable non-discrete eval", action="store_true", default=False)
+    parser.add_argument("--extra", help="extra arguments", nargs="+", choices=[])
+    parser.add_argument(
+        "--silent",
+        help="supress prints",
+        action="store_true",
+        default=False,
+    )
+
+    # DDT Specific
+    parser.add_argument("-l", "--num_leaves", help="number of leaves for DDT/DRL ", type=int, default=8)
+    parser.add_argument(
+        "-L", "--legacy", help="Use original code without an algorithm", default=False, action="store_true"
+    )
+    parser.add_argument("-n", "--num_hidden", help="number of hidden layers for MLP ", type=int, default=0)
+    parser.add_argument("-r", "--rule_list", help="Use rule list setup", action="store_true", default=False)
+    parser.add_argument("--use_silva_loss", "--silva_loss", help="Use Silva loss", action="store_true", default=False)
+
+    # Args postprocessing
     args = parser.parse_args()
     assert args.agent_type == "ddt", f"Only DDT is supported, got {args.agent_type}"
     if args.agent_type == "ddt" and args.num_hidden:
         raise ValueError("Do not use --num_hidden with DDT")
-    use_comet_offline = args.comet.lower().startswith("offline")
+    use_comet_offline: bool = args.comet.lower().startswith("offline")
     if args.comet.lower() in ("0", "false", "off"):
         args.comet = False
     if not args.test and not args.comet:
@@ -116,15 +124,11 @@ if __name__ == "__main__":
 
     if args.seed == -1:
         args.seed = None
-    if args.env_type == "lunar":
-        init_env = gym.make("LunarLander-v2")
-    elif args.env_type == "cart":
-        init_env = gym.make("CartPole-v1")
-    else:
-        # Allow different environments
-        init_env = gym.make(args.env_type)
+    init_env = create_env(args.env_type)
     env_name = init_env.unwrapped.spec.id  # pyright: ignore[reportOptionalMemberAccess]
     args.env_type = env_name
+
+    # Create Config & Trainable
 
     # note config will be passed as first positional argument
     if args.legacy:
@@ -146,7 +150,9 @@ if __name__ == "__main__":
                 use_pbar=tqdm_ray.tqdm,
                 episodes=args.episodes,
                 # Note: cast to int as it might be an np.int type
-                dim_in=int(module_spec.observation_space.shape[0]),  # pyright: ignore[reportOptionalSubscript, reportOptionalMemberAccess]
+                dim_in=int(
+                    module_spec.observation_space.shape[0]  # pyright: ignore[reportOptionalSubscript, reportOptionalMemberAccess]
+                ),
                 dim_out=int(module_spec.action_space.n),  # type: ignore[attr-defined],
                 render_mode=None,
                 comment=args.comment,
@@ -156,18 +162,17 @@ if __name__ == "__main__":
     else:
         config, module_spec = create_ddt_config(args)
         trainable = partial(build_and_train, use_pbar=True)
+    # Will use these resources per job
+    # NOTE: Even if not used will allocate these resources per run
+    # trainable_with_resources = tune.with_resources(trainable, tune.PlacementGroupFactory(
+    #    [{'CPU': 1.0}] + [{'CPU': 1.0}] * (4 if args.parallel else 0),
+    # ))
+    # Use tune.with_parameters to pass large objects to the trainable
+
+    # Callbacks
 
     # If videos are logged use custom callbacks for correct logging
     # NOTE: JSON, CSV, and Tensorboard loggers are created automatically by Tune if not disabled
-    callbacks: list[Callback] = (
-        [
-            AdvJsonLoggerCallback(),
-            AdvTBXLoggerCallback(),
-            AdvCSVLoggerCallback(),
-        ]
-        if args.render_mode
-        else []
-    )
     tags = ["dev", env_name, args.agent_type, *args.tags]
     if args.test:
         tags.append("test")
@@ -179,6 +184,9 @@ if __name__ == "__main__":
         tags.append("gpu")
     if args.rule_list:
         tags.append("RuleList")
+    callbacks: list[Callback] = create_tuner_callbacks(render=args.render_mode)
+
+    # WandB
     if args.wandb:
         callbacks.append(
             WandbLoggerCallback(
@@ -199,6 +207,8 @@ if __name__ == "__main__":
     else:
         # could use wandb offline
         logger.info("Not logging to WandB")
+
+    # Comet
     if args.comet or args.test:
         # API KEY
         from dotenv import load_dotenv
@@ -231,13 +241,13 @@ if __name__ == "__main__":
             log_git_patch=False,
             log_graph=False,  # computation graph, Default True
             log_code=False,  # Default True; use if not using git_metadata
-            log_env_details=True,
+            log_env_details=not args.test,
             # Subkeys of env details:
             log_env_network=False,
             log_env_disk=False,
-            log_env_gpu=args.num_jobs <= 5 and args.gpu and not args.test,
+            log_env_gpu=args.num_jobs <= 5 and args.gpu,
             log_env_host=False,
-            log_env_cpu=args.num_jobs <= 5 and not args.test,
+            log_env_cpu=args.num_jobs <= 5,
             # ---
             auto_log_co2=False,  # needs codecarbon
             auto_histogram_weight_logging=False,  # Default False
@@ -252,19 +262,13 @@ if __name__ == "__main__":
             ),
             log_to_other=("comment", "cli_args/comment", "cli_args/test", "cli_args/num_jobs"),
             log_cli_args=True,
+            log_pip_packages=True,  # only relevant if log_env_details=False
         )
         # Metrics to exclude
         # keep only time_this_iter_s
         callbacks.append(comet_callback)
-    # Will use these resources per job
-    # NOTE: Even if not used will allocate these resources per run
-    # trainable_with_resources = tune.with_resources(trainable, tune.PlacementGroupFactory(
-    #    [{'CPU': 1.0}] + [{'CPU': 1.0}] * (4 if args.parallel else 0),
-    # ))
-    # Use tune.with_parameters to pass large objects to the trainable
-    # Create a dict to upload as hyperparameters
 
-    # -- Preprocess Parameters --
+    # -- Preprocess Parameters to be Logged--
 
     upload_args = vars(args).copy()
     upload_args["extra"] = repr(args.extra)
@@ -275,6 +279,7 @@ if __name__ == "__main__":
     if upload_args["process_number"] is None:
         del upload_args["process_number"]
 
+    # Create a dict to upload as hyperparameters and pass to trainable
     param_space: dict[str, Any] = {
         "env": config.env if isinstance(config.env, str) else config.env.unwrapped.spec.id,
         "algo": config.algo_class.__name__,
@@ -285,6 +290,7 @@ if __name__ == "__main__":
     param_space = {k: tune.choice([v]) for k, v in param_space.items()}
     param_space["cli_args"] = upload_args
 
+    # -- Test --
     if args.test and args.not_parallel:
         # will spew some warnings about train.report
         print("-- TEST MODE --")
