@@ -29,7 +29,7 @@ from interpretable_ddts.agents.ddt_catalog import DDTCatalog
 from interpretable_ddts.agents.ddt_ppo_module import DDTModule
 from interpretable_ddts.agents.ppo_learner import SilvaLearner
 from interpretable_ddts.runfiles._pbar_updates import update_pbar
-from interpretable_ddts.runfiles.constants import (
+from ray_utilities.constants import (
     DISC_EVAL_METRIC_RETURN_MEAN,
     DISCRETE_EVALUATION_BEST_VIDEO,
     DISCRETE_EVALUATION_WORST_VIDEO,

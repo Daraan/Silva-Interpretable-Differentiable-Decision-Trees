@@ -18,7 +18,7 @@ from ray.tune import CLIReporter
 from ray_utilities.comet import comet_upload_offline_experiments, get_default_workspace  # isort: skip # comet should be imported before torch
 
 from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
-from interpretable_ddts.runfiles.constants import DISC_EVAL_METRIC_RETURN_MEAN
+from ray_utilities.constants import DISC_EVAL_METRIC_RETURN_MEAN
 from ray_utilities import trial_name_creator
 from ray_utilities.callbacks.tuner import (
     AdvCometLoggerCallback,

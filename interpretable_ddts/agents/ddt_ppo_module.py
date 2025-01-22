@@ -19,7 +19,7 @@ from interpretable_ddts.opt_helpers import ppo_update
 from interpretable_ddts.opt_helpers.replay_buffer import (
     ReplayBufferSingleAgent as SilvaReplayBuffer,
 )
-from interpretable_ddts.runfiles.constants import DISC_EVAL_METRIC_RETURN_MEAN, EVAL_METRIC_RETURN_MEAN
+from ray_utilities.constants import DISC_EVAL_METRIC_RETURN_MEAN, EVAL_METRIC_RETURN_MEAN
 
 # This suppresses a deprecation warning from RLModuleConfig
 __old_level = _deprecation_logger.getEffectiveLevel()
