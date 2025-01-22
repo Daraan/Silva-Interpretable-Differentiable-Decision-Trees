@@ -20,6 +20,7 @@ from ray_utilities.comet import comet_upload_offline_experiments, get_default_wo
 from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
 from ray_utilities.constants import DISC_EVAL_METRIC_RETURN_MEAN
 from ray_utilities import trial_name_creator
+from ray_utilities.callbacks import LOG_IGNORE_ARGS, remove_ignored_args
 from ray_utilities.callbacks.tuner import (
     AdvCometLoggerCallback,
     create_tuner_callbacks,
@@ -36,7 +37,7 @@ if TYPE_CHECKING:
     from ray.tune.callback import Callback
 
 if __name__ == "__main__":
-    # full parser see: https://github.com/ray-project/ray/blob/master/rllib/utils/test_utils.py#L61
+    # full parser example see: https://github.com/ray-project/ray/blob/master/rllib/utils/test_utils.py#L61
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--agent_type", help="architecture of agent to run", type=str, default="ddt")
     parser.add_argument("-env", "--env_type", help="environment to run on", type=str, default="cart")
@@ -104,7 +105,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-L", "--legacy", help="Use original code without an algorithm", default=False, action="store_true"
     )
-    parser.add_argument("-n", "--num_hidden", help="number of hidden layers for MLP ", type=int, default=0)
+    parser.add_argument("-n", "--num_hidden", help="number of hidden layers for MLP", type=int, default=None)
     parser.add_argument("-r", "--rule_list", help="Use rule list setup", action="store_true", default=False)
     parser.add_argument("--use_silva_loss", "--silva_loss", help="Use Silva loss", action="store_true", default=False)
 
@@ -269,15 +270,10 @@ if __name__ == "__main__":
         callbacks.append(comet_callback)
 
     # -- Preprocess Parameters to be Logged--
-
-    upload_args = vars(args).copy()
+    upload_args = remove_ignored_args(args, remove=(*LOG_IGNORE_ARGS, "process_number"))
     upload_args["extra"] = repr(args.extra)
-    for key in ("wandb", "comet", "not_parallel", "silent"):
-        del upload_args[key]
     if args.agent_type == "ddt":
         del upload_args["num_hidden"]
-    if upload_args["process_number"] is None:
-        del upload_args["process_number"]
 
     # Create a dict to upload as hyperparameters and pass to trainable
     param_space: dict[str, Any] = {

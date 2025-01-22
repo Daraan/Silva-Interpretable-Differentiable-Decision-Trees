@@ -5,7 +5,7 @@ import logging
 import math
 import os
 import tempfile
-from typing import TYPE_CHECKING, Any, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Optional, TypeVar, cast
 
 import gymnasium as gym
 import ray
@@ -57,8 +57,11 @@ def create_ddt_config(
     Args:
         legacy: Use the legacy code based on `gym_runner.py` and not an algorithm class.
     """
-    if isinstance(args, argparse.Namespace):
-        args = vars(args).copy()
+    if not isinstance(args, dict):
+        if hasattr(args, "as_dict"):
+            args = cast(dict[str, Any], args.as_dict())
+        else:
+            args = vars(args).copy()
     if not env_type and not args["env_type"]:
         raise ValueError("No environment specified")
     env_type = env_type or args["env_type"]

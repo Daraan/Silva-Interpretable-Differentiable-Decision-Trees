@@ -334,7 +334,7 @@ def evaluate_model(
         print(msg)
     elif parallel_count is not None:
         # not a precise but estimated progress count
-        print(f"{'~'+str(parallel_count[0]):>9}/{parallel_count[1]}", end="\r", flush=True)
+        print(f"{'~' + str(parallel_count[0]):>9}/{parallel_count[1]}", end="\r", flush=True)
     else:
         print(".", end="", flush=True)
     if run_discrete and crispy_reward is not None:
@@ -366,7 +366,7 @@ def test_model(
         print("\n------------------\nTesting", discrete_fn)
     elif count is not None:
         # not a precise but estimated progress count
-        print(f"{'~'+str(count[0]):>9}/{count[1]}", end="\r", flush=True)
+        print(f"{'~' + str(count[0]):>9}/{count[1]}", end="\r", flush=True)
     else:
         print(".", end="", flush=True)
     filename = discrete_fn.name if isinstance(discrete_fn, Path) else discrete_fn

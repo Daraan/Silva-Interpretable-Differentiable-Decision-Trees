@@ -252,7 +252,7 @@ def start_process(
     agent_type: "str | RLModuleSpec" = args.agent_type
     env_type: str | gym.Env = args.env_type
     if not isinstance(env_type, str):
-        env_type = env_type.unwrapped.spec.id
+        env_type = env_type.unwrapped.spec.id  # type: ignore[attr-defined]
     seed: Optional[int] = args.seed
     # Initialize with different seed
     if isinstance(i, int):
