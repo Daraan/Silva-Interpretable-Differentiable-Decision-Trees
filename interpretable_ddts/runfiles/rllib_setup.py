@@ -27,6 +27,8 @@ from ray_utilities.callbacks.tuner import (
 )
 from ray_utilities.environment import create_env
 
+from interpretable_ddts.runfiles.ddt_setup import DDTSetup
+
 os.environ["RAY_COLOR_PREFIX"] = "1"
 
 RAY_VERSION = parse_version(ray.__version__)
@@ -86,8 +88,8 @@ if __name__ == "__main__":
         choices=["offline", "offline+upload", "0", "1", "False", "off", "on"],
         type=str,
     )
-    parser.add_argument("--comment", "-c", help="Add comment to this run", type=str, default="")
-    parser.add_argument("--tags", nargs="+", help="Add tags to this run to be used with wandb and comet", default=())
+    parser.add_argument("--comment", "-c", help="Add comment to this run", type=str, default=None)
+    parser.add_argument("--tags", nargs="+", help="Add tags to this run to be used with wandb and comet", default=[])
 
     # Outdated / deprecated / unused
     parser.add_argument("-p", "--process_number", help="Process number", type=int, default=None)
@@ -106,8 +108,10 @@ if __name__ == "__main__":
         "-L", "--legacy", help="Use original code without an algorithm", default=False, action="store_true"
     )
     parser.add_argument("-n", "--num_hidden", help="number of hidden layers for MLP", type=int, default=None)
-    parser.add_argument("-r", "--rule_list", help="Use rule list setup", action="store_true", default=False)
+    parser.add_argument("-rl", "--rule_list", help="Use rule list setup", action="store_true", default=False)
     parser.add_argument("--use_silva_loss", "--silva_loss", help="Use Silva loss", action="store_true", default=False)
+
+    args2 = DDTSetup.parse_args()
 
     # Args postprocessing
     args = parser.parse_args()
@@ -128,6 +132,14 @@ if __name__ == "__main__":
     init_env = create_env(args.env_type)
     env_name = init_env.unwrapped.spec.id  # pyright: ignore[reportOptionalMemberAccess]
     args.env_type = env_name
+    # Test to assert matching configs and args
+    for k, v in vars(args).items():
+        if not hasattr(args2, k):
+            print("Has no attribute", k)
+            continue
+        assert getattr(args2, k) == v, f"args2.{k}={getattr(args2, k)} != args.{k}={v}"
+
+    config2, module_spec2 = DDTSetup.create_config_and_module_spec(args)
 
     # Create Config & Trainable
 
@@ -163,6 +175,14 @@ if __name__ == "__main__":
     else:
         config, module_spec = create_ddt_config(args)
         trainable = partial(build_and_train, use_pbar=True)
+
+        config_dict = config.to_dict()
+        config2_dict = config2.to_dict()
+        # Test to assert matching configs and args
+        for k in set(config_dict.keys()) | set(config2_dict.keys()):
+            v1, v2 = config_dict[k], config2_dict[k]
+            assert v1 == v2, f"For key {k}, {v1} += {v2}"
+        assert module_spec == module_spec2
     # Will use these resources per job
     # NOTE: Even if not used will allocate these resources per run
     # trainable_with_resources = tune.with_resources(trainable, tune.PlacementGroupFactory(
@@ -275,12 +295,13 @@ if __name__ == "__main__":
     if args.agent_type == "ddt":
         del upload_args["num_hidden"]
 
+    module_spec_copy = config.get_rl_module_spec()  # merged with default module spec
     # Create a dict to upload as hyperparameters and pass to trainable
     param_space: dict[str, Any] = {
         "env": config.env if isinstance(config.env, str) else config.env.unwrapped.spec.id,
         "algo": config.algo_class.__name__,
-        "module": config.rl_module_spec.module_class.__name__,
-        "model_config": config.rl_module_spec.model_config,
+        "module": module_spec_copy.module_class.__name__,
+        "model_config": module_spec_copy.model_config,
     }
     # WandB might not log them if they are not selected as choice
     param_space = {k: tune.choice([v]) for k, v in param_space.items()}

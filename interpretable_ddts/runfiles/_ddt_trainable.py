@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import logging
 import math
 import os
@@ -42,13 +41,18 @@ from ray_utilities import is_pbar
 from ray_utilities.callbacks.algorithm.discrete_eval_callback import DiscreteEvalCallback
 from ray_utilities.callbacks.algorithm.env_render_callback import make_render_callback
 
+
+if TYPE_CHECKING:
+    from interpretable_ddts.runfiles.ddt_setup import DDTArgumentParser
+    from ray_utilities.config.experiment_base import NamespaceType
+
 logger = logging.getLogger(__name__)
 
 _ConfigType = TypeVar("_ConfigType", bound=PPOConfig)
 
 
 def create_ddt_config(
-    args: dict[str, Any] | argparse.Namespace,
+    args: dict[str, Any] | NamespaceType[DDTArgumentParser],
     env_type: Optional[str | type[gym.Env]] = None,
     *,
     config_class: type[_ConfigType] = PPOConfig,

@@ -1,20 +1,26 @@
 from __future__ import annotations
+
+import logging
 from argparse import Namespace
 from functools import partial
+from typing import Any, Callable
 
 from ray.rllib.algorithms.ppo.ppo import PPOConfig
-from ray.rllib.core.rl_module.rl_module import RLModuleSpec
-from ray_utilities.config.experiment_base import ExperimentSetupBase, DefaultArgumentParser
 
 from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
-from typing import TYPE_CHECKING, Literal, overload
+from ray_utilities.config.experiment_base import (
+    DefaultArgumentParser,
+    ExperimentSetupBase,
+    TrainableReturnData,
+)
+from ray_utilities.environment import parse_env_name
 
-if TYPE_CHECKING:
-    from ray.rllib.algorithms.algorithm import RLModuleSpec
-    from ray.rllib.algorithms import AlgorithmConfig
+logger = logging.getLogger(__name__)
 
 
 class DDTArgumentParser(DefaultArgumentParser):
+    agent_type: str = "ddt"
+
     num_leaves: int = 8
     """Number of leaves for DDT/DRL. Must be a square of 2."""
 
@@ -25,40 +31,55 @@ class DDTArgumentParser(DefaultArgumentParser):
     """Use Silva's loss implementation"""
 
     # MLP
-    num_hidden: int = 0
+    num_hidden: int | None = None
     """Number of hidden layers when using MLP"""
 
     legacy: bool = False
     """Use original code without an algorithm"""
 
+    def configure(self):
+        super().configure()
+        self.add_argument("-l", "--num_leaves")
+        self.add_argument("-rl", "--rule_list")
 
-class DDTSetup(ExperimentSetupBase):
-    def create_parser(self) -> DDTArgumentParser:
+
+class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
+    @classmethod
+    def create_parser(cls) -> DDTArgumentParser:
         return DDTArgumentParser()
 
-    @overload
-    def create_config(self, args: Namespace, *, return_module_spec: Literal[False]) -> PPOConfig: ...
-
-    @overload
-    def create_config(
-        self, args: Namespace, *, return_module_spec: Literal[True] = True
-    ) -> tuple[PPOConfig, RLModuleSpec]: ...
-
-    def create_config(self, args: Namespace, *, return_module_spec: bool = True):
-        config, module_spec = create_ddt_config(args)
-        if return_module_spec:
-            return config, module_spec
+    @classmethod
+    def create_config(cls, args):
+        config, _module_spec = create_ddt_config(args)
         return config
 
-    def create_trainable(self):
-        return partial(build_and_train, use_pbar=True)
+    @classmethod
+    def postprocess_args(cls, args):
+        args = super().postprocess_args(args)
+        args.env_type = parse_env_name(args.env_type)
+        assert args.agent_type == "ddt", f"Only DDT is supported, got {args.agent_type}"
+        if args.agent_type == "ddt" and args.num_hidden:
+            raise ValueError("Do not use --num_hidden with DDT")
+        if args.agent_type == "mlp" and args.num_hidden is None:
+            raise ValueError("Must specify --num_hidden with MLP")
+        if not args.test and not args.comet:
+            logger.warning("Not in test mode and comet disabled. Will not log to Comet")
+            import time
 
-    def trainable_from_config(self, *, args: Namespace | DDTArgumentParser, config: AlgorithmConfig):  # pyright: ignore[reportIncompatibleMethodOverride]
+            time.sleep(4)  # give user time to cancel
+
+        if args.seed == -1:
+            args.seed = None
+        return args
+
+    @classmethod
+    def trainable_from_config(cls, *, args, config) -> Callable[[dict[str, Any]], TrainableReturnData]:
         if args.legacy:
             # Do not use an algorithm but the gym_runner.py code
             config, module_spec = create_ddt_config(vars(args).copy())
-            from interpretable_ddts.runfiles import gym_runner
             from ray.experimental import tqdm_ray
+
+            from interpretable_ddts.runfiles import gym_runner
 
             trainable = partial(
                 gym_runner.start_process,
@@ -83,6 +104,7 @@ class DDTSetup(ExperimentSetupBase):
                 ),
                 use_rllib_output=True,
             )
+            return trainable
 
         trainable = partial(build_and_train, use_pbar=True)
         return trainable
