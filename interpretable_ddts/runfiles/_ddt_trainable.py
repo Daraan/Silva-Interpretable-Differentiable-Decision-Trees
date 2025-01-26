@@ -62,7 +62,7 @@ def create_ddt_config(
         legacy: Use the legacy code based on `gym_runner.py` and not an algorithm class.
     """
     if not isinstance(args, dict):
-        if hasattr(args, "as_dict"):
+        if hasattr(args, "as_dict"):  # Tap
             args = cast(dict[str, Any], args.as_dict())
         else:
             args = vars(args).copy()
@@ -148,6 +148,7 @@ def create_ddt_config(
         use_gae=True,  # Must be true to use "truncate_episodes"
     )
     # Create a single agent RL module spec.
+    # NOTE: This might needs adjustment when using VectorEnv
     if isinstance(config.env, str):
         init_env = gym.make(config.env)
     else:

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import argparse
 import logging
 import os
 import sys
-from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -12,20 +10,17 @@ import ray
 from packaging.version import parse as parse_version
 from ray import train, tune
 from ray.air.integrations.wandb import WandbLoggerCallback, setup_wandb
-from ray.experimental import tqdm_ray
 from ray.tune import CLIReporter
 
 from ray_utilities.comet import comet_upload_offline_experiments, get_default_workspace  # isort: skip # comet should be imported before torch
 
-from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
+from interpretable_ddts.runfiles._ddt_trainable import build_and_train
 from ray_utilities.constants import DISC_EVAL_METRIC_RETURN_MEAN
 from ray_utilities import trial_name_creator
-from ray_utilities.callbacks import LOG_IGNORE_ARGS, remove_ignored_args
 from ray_utilities.callbacks.tuner import (
     AdvCometLoggerCallback,
     create_tuner_callbacks,
 )
-from ray_utilities.environment import create_env
 
 from interpretable_ddts.runfiles.ddt_setup import DDTSetup
 
@@ -40,149 +35,17 @@ if TYPE_CHECKING:
 
 if __name__ == "__main__":
     # full parser example see: https://github.com/ray-project/ray/blob/master/rllib/utils/test_utils.py#L61
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-a", "--agent_type", help="architecture of agent to run", type=str, default="ddt")
-    parser.add_argument("-env", "--env_type", help="environment to run on", type=str, default="cart")
-    parser.add_argument("-e", "--episodes", help="how many episodes", type=int, default=1000)
-    parser.add_argument("-s", "--seed", help="Seed", default=None, type=int)
-    parser.add_argument("--test", "--dry-run", help="Do not save any models", action="store_true", default=False)
 
-    # Ressources
-    parser.add_argument("-J", "--num_jobs", help="Amount of jobs the Tuner does start", default=5, type=int)
-    parser.add_argument("-gpu", "--gpu", help="run on GPU?", action="store_true")
-    parser.add_argument(
-        "-mp",
-        "--parallel",
-        help="Use multiple CPUs per worker",
-        action="store_true",
-        default=False,
-    )
-    parser.add_argument(
-        "-np",
-        "--not_parallel",
-        help="Do not run multiple models in parallel, i.e. the Tuner will execute one job only. "
-        "This is equivalent to num_jobs=1",
-        action="store_true",
-        default=False,
-    )
-
-    parser.add_argument(
-        "--render_mode",
-        "--render",
-        nargs="?",
-        const="rgb_array",
-        help="Render mode",
-        type=str,
-        default=None,
-        choices=["human", "rgb_array", "ansi"],
-    )
-
-    # Loggers
-    parser.add_argument("--wandb", "-wb", help="Log to WandB", action="store_true", default=False)
-    parser.add_argument(
-        "--comet",
-        nargs="?",
-        help="Log to Comet",
-        const="1",
-        default="off",
-        choices=["offline", "offline+upload", "0", "1", "False", "off", "on"],
-        type=str,
-    )
-    parser.add_argument("--comment", "-c", help="Add comment to this run", type=str, default=None)
-    parser.add_argument("--tags", nargs="+", help="Add tags to this run to be used with wandb and comet", default=[])
-
-    # Outdated / deprecated / unused
-    parser.add_argument("-p", "--process_number", help="Process number", type=int, default=None)
-    parser.add_argument("-nd", "--not_discrete", help="Disable non-discrete eval", action="store_true", default=False)
-    parser.add_argument("--extra", help="extra arguments", nargs="+", choices=[])
-    parser.add_argument(
-        "--silent",
-        help="supress prints",
-        action="store_true",
-        default=False,
-    )
-
-    # DDT Specific
-    parser.add_argument("-l", "--num_leaves", help="number of leaves for DDT/DRL ", type=int, default=8)
-    parser.add_argument(
-        "-L", "--legacy", help="Use original code without an algorithm", default=False, action="store_true"
-    )
-    parser.add_argument("-n", "--num_hidden", help="number of hidden layers for MLP", type=int, default=None)
-    parser.add_argument("-rl", "--rule_list", help="Use rule list setup", action="store_true", default=False)
-    parser.add_argument("--use_silva_loss", "--silva_loss", help="Use Silva loss", action="store_true", default=False)
-
-    args2 = DDTSetup.parse_args()
-
-    # Args postprocessing
-    args = parser.parse_args()
-    assert args.agent_type == "ddt", f"Only DDT is supported, got {args.agent_type}"
-    if args.agent_type == "ddt" and args.num_hidden:
-        raise ValueError("Do not use --num_hidden with DDT")
-    use_comet_offline: bool = args.comet.lower().startswith("offline")
-    if args.comet.lower() in ("0", "false", "off"):
-        args.comet = False
-    if not args.test and not args.comet:
-        logger.warning("Not in test mode and comet disabled. Will not log to Comet")
-        import time
-
-        time.sleep(4)  # give user time to cancel
-
-    if args.seed == -1:
-        args.seed = None
-    init_env = create_env(args.env_type)
-    env_name = init_env.unwrapped.spec.id  # pyright: ignore[reportOptionalMemberAccess]
-    args.env_type = env_name
-    # Test to assert matching configs and args
-    for k, v in vars(args).items():
-        if not hasattr(args2, k):
-            print("Has no attribute", k)
-            continue
-        assert getattr(args2, k) == v, f"args2.{k}={getattr(args2, k)} != args.{k}={v}"
-
-    config2, module_spec2 = DDTSetup.create_config_and_module_spec(args)
+    setup = DDTSetup()
+    args = setup.get_args()
+    env_name = args.env_type
+    use_comet_offline: bool = args.comet and args.comet.lower().startswith("offline")
 
     # Create Config & Trainable
-
     # note config will be passed as first positional argument
-    if args.legacy:
-        # Do not use an algorithm but the gym_runner.py code
-        config, module_spec = create_ddt_config(args)
-        from interpretable_ddts.runfiles import gym_runner
+    config, module_spec = setup.create_config_and_module_spec(args)
+    trainable = setup.trainable_from_config(args=args, config=config)
 
-        trainable = partial(
-            gym_runner.start_process,
-            args=argparse.Namespace(
-                agent_type=module_spec,
-                env_type=config.env,
-                seed=args.seed,
-                gpu=args.gpu,
-                rule_list=args.rule_list,
-                num_leaves=args.num_leaves,
-                test=args.test,
-                num_hidden=args.num_hidden,
-                use_pbar=tqdm_ray.tqdm,
-                episodes=args.episodes,
-                # Note: cast to int as it might be an np.int type
-                dim_in=int(
-                    module_spec.observation_space.shape[0]  # pyright: ignore[reportOptionalSubscript, reportOptionalMemberAccess]
-                ),
-                dim_out=int(module_spec.action_space.n),  # type: ignore[attr-defined],
-                render_mode=None,
-                comment=args.comment,
-            ),
-            use_rllib_output=True,
-        )
-    else:
-        config, module_spec = create_ddt_config(args)
-        trainable = partial(build_and_train, use_pbar=True)
-
-        config_dict = config.to_dict()
-        config2_dict = config2.to_dict()
-        # Test to assert matching configs and args
-        for k in set(config_dict.keys()) | set(config2_dict.keys()):
-            v1, v2 = config_dict[k], config2_dict[k]
-            assert v1 == v2, f"For key {k}, {v1} += {v2}"
-        assert module_spec == module_spec2
     # Will use these resources per job
     # NOTE: Even if not used will allocate these resources per run
     # trainable_with_resources = tune.with_resources(trainable, tune.PlacementGroupFactory(
@@ -194,18 +57,8 @@ if __name__ == "__main__":
 
     # If videos are logged use custom callbacks for correct logging
     # NOTE: JSON, CSV, and Tensorboard loggers are created automatically by Tune if not disabled
-    tags = ["dev", env_name, args.agent_type, *args.tags]
-    if args.test:
-        tags.append("test")
-    if args.legacy:
-        tags.append("legacy")
-    if args.use_silva_loss:
-        tags.append("silva_loss")
-    if args.gpu:
-        tags.append("gpu")
-    if args.rule_list:
-        tags.append("RuleList")
-    callbacks: list[Callback] = create_tuner_callbacks(render=args.render_mode)
+    tags = setup.create_tags()
+    callbacks: list[Callback] = create_tuner_callbacks(render=bool(args.render_mode))
 
     # WandB
     if args.wandb:
@@ -290,22 +143,18 @@ if __name__ == "__main__":
         callbacks.append(comet_callback)
 
     # -- Preprocess Parameters to be Logged--
-    upload_args = remove_ignored_args(args, remove=(*LOG_IGNORE_ARGS, "process_number"))
-    upload_args["extra"] = repr(args.extra)
-    if args.agent_type == "ddt":
-        del upload_args["num_hidden"]
+    args_to_upload = setup.clean_args_to_hparams(args)
 
-    module_spec_copy = config.get_rl_module_spec()  # merged with default module spec
     # Create a dict to upload as hyperparameters and pass to trainable
     param_space: dict[str, Any] = {
         "env": config.env if isinstance(config.env, str) else config.env.unwrapped.spec.id,
         "algo": config.algo_class.__name__,
-        "module": module_spec_copy.module_class.__name__,
-        "model_config": module_spec_copy.model_config,
+        "module": module_spec.module_class.__name__,
+        "model_config": module_spec.model_config,
     }
     # WandB might not log them if they are not selected as choice
     param_space = {k: tune.choice([v]) for k, v in param_space.items()}
-    param_space["cli_args"] = upload_args
+    param_space["cli_args"] = args_to_upload
 
     # -- Test --
     if args.test and args.not_parallel:

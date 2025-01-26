@@ -115,6 +115,7 @@ class SilvaLearner(PPOTorchLearner):
             if use_silva_loss:
                 _original_value_fn_out = value_fn_out
                 # If the value network has 2 outputs, take the one corresponding to the action taken
+                # TODO: something is wrong with the dimensions here when using lunar
                 if module.vf.output_dim != 1:  # type: ignore[attr-defined]
                     value_fn_out = value_fn_out[
                         torch.arange(0, len(value_fn_out)),
