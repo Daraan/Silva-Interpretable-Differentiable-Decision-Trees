@@ -59,8 +59,8 @@ class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
     def create_parser(self) -> DDTArgumentParser:
         return DDTArgumentParser()
 
-    def create_config(self, args):
-        config, _module_spec = create_ddt_config(args)
+    def _create_config(self):
+        config, _module_spec = create_ddt_config(self.args)
         return config
 
     def postprocess_args(self, args):
@@ -97,32 +97,32 @@ class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
 
     # region Config and Trainable
 
-    def trainable_from_config(self, *, args, config) -> Callable[[dict[str, Any]], TrainableReturnData]:
-        if args.legacy:
+    def create_trainable(self) -> Callable[[dict[str, Any]], TrainableReturnData]:
+        if self.args.legacy:
             # Do not use an algorithm but the gym_runner.py code
             from ray.experimental import tqdm_ray
 
             from interpretable_ddts.runfiles import gym_runner
 
-            module_spec = config.get_rl_module_spec()
+            module_spec = self.config.get_rl_module_spec()
             trainable = partial(
                 gym_runner.start_process,
                 args=Namespace(
                     agent_type=module_spec,
-                    env_type=config.env,
-                    seed=args.seed,
-                    gpu=args.gpu,
-                    rule_list=args.rule_list,
-                    num_leaves=args.num_leaves,
-                    test=args.test,
-                    num_hidden=args.num_hidden,
+                    env_type=self.config.env,
+                    seed=self.args.seed,
+                    gpu=self.args.gpu,
+                    rule_list=self.args.rule_list,
+                    num_leaves=self.args.num_leaves,
+                    test=self.args.test,
+                    num_hidden=self.args.num_hidden,
                     use_pbar=tqdm_ray.tqdm,
-                    episodes=args.episodes,
+                    episodes=self.args.episodes,
                     # Note: cast to int as it might be an np.int type
                     dim_in=int(module_spec.observation_space.shape[0]),  # noqa: E501 # pyright: ignore[reportOptionalSubscript, reportOptionalMemberAccess]
                     dim_out=int(module_spec.action_space.n),  # type: ignore[attr-defined],
                     render_mode=None,
-                    comment=args.comment,
+                    comment=self.args.comment,
                 ),
                 use_rllib_output=True,
             )

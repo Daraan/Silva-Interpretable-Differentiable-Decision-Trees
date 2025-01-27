@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import ray
 from packaging.version import parse as parse_version
@@ -33,18 +33,15 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from ray.tune.callback import Callback
 
-if __name__ == "__main__":
+
+def main():
     # full parser example see: https://github.com/ray-project/ray/blob/master/rllib/utils/test_utils.py#L61
 
     setup = DDTSetup()
     args = setup.get_args()
     env_name = args.env_type
     use_comet_offline: bool = args.comet and args.comet.lower().startswith("offline")
-
-    # Create Config & Trainable
-    # note config will be passed as first positional argument
-    config, module_spec = setup.create_config_and_module_spec(args)
-    trainable = setup.trainable_from_config(args=args, config=config)
+    trainable = setup.trainable
 
     # Will use these resources per job
     # NOTE: Even if not used will allocate these resources per run
@@ -141,20 +138,8 @@ if __name__ == "__main__":
         # Metrics to exclude
         # keep only time_this_iter_s
         callbacks.append(comet_callback)
-
-    # -- Preprocess Parameters to be Logged--
-    args_to_upload = setup.clean_args_to_hparams(args)
-
-    # Create a dict to upload as hyperparameters and pass to trainable
-    param_space: dict[str, Any] = {
-        "env": config.env if isinstance(config.env, str) else config.env.unwrapped.spec.id,
-        "algo": config.algo_class.__name__,
-        "module": module_spec.module_class.__name__,
-        "model_config": module_spec.model_config,
-    }
-    # WandB might not log them if they are not selected as choice
-    param_space = {k: tune.choice([v]) for k, v in param_space.items()}
-    param_space["cli_args"] = args_to_upload
+    else:
+        logger.info("Not logging to Comet")
 
     # -- Test --
     if args.test and args.not_parallel:
@@ -163,13 +148,13 @@ if __name__ == "__main__":
         if args.legacy:
             trainable({})
         else:
-            result = build_and_train(param_space, disable_report=True)
+            results = build_and_train(setup.param_space, disable_report=True)
         sys.exit()
 
     # -- Tune --
     tuner = tune.Tuner(
         trainable,  # Note: possibly can also be a list
-        param_space=param_space,
+        param_space=setup.param_space,
         tune_config=tune.TuneConfig(
             num_samples=1 if args.not_parallel else args.num_jobs,
             # metric=
@@ -199,3 +184,8 @@ if __name__ == "__main__":
     results = tuner.fit()
     if args.comet == "offline+upload":
         comet_upload_offline_experiments()
+    return results
+
+
+if __name__ == "__main__":
+    results = main()
