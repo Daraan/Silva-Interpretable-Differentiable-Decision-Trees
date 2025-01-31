@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import logging
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, TypeAlias, Union
 
 import torch
 from ray.rllib.algorithms.ppo.ppo import (
@@ -13,9 +15,17 @@ from ray.rllib.core.columns import Columns
 from ray.rllib.core.learner.learner import ENTROPY_KEY, POLICY_LOSS_KEY, VF_LOSS_KEY
 from ray.rllib.evaluation.postprocessing import Postprocessing
 from ray.rllib.utils.torch_utils import explained_variance
-from ray.rllib.utils.typing import ModuleID, TensorType
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from ray.rllib.utils.typing import ModuleID
+    import jax.numpy as jnp  # pyright: ignore[reportMissingImports]
+    from numpy.typing import NDArray
+    from ray.rllib.algorithms.ppo.ppo_rl_module import PPORLModule
+
+    # rays typing is invalid, remove tf.Tensor for indexing
+    TensorType: TypeAlias = Union[NDArray, "jnp.ndarray", "torch.Tensor"]
 
 
 class SilvaLearner(PPOTorchLearner):
@@ -29,7 +39,7 @@ class SilvaLearner(PPOTorchLearner):
         fwd_out: Dict[str, TensorType],
     ) -> TensorType:
         # Note fwd_out["embeddings"] likely == batch
-        module = self.module[module_id].unwrapped()
+        module: PPORLModule = self.module[module_id].unwrapped()  # pyright: ignore[reportAssignmentType]
         use_silva_loss = self.config.learner_config_dict["use_silva_loss"]
 
         if Columns.LOSS_MASK in batch:
@@ -40,7 +50,7 @@ class SilvaLearner(PPOTorchLearner):
                 return torch.sum(data_[mask]) / num_valid
 
         else:
-            possibly_masked_mean = torch.mean
+            possibly_masked_mean = torch.mean  # type: ignore[assignment]
 
         action_dist_class_train = module.get_train_action_dist_cls()
         action_dist_class_exploration = module.get_exploration_action_dist_cls()
@@ -97,7 +107,12 @@ class SilvaLearner(PPOTorchLearner):
             # Surr1
             batch[Postprocessing.ADVANTAGES] * logp_ratio,
             # Surr2
-            batch[Postprocessing.ADVANTAGES] * torch.clamp(logp_ratio, 1 - config.clip_param, 1 + config.clip_param),
+            batch[Postprocessing.ADVANTAGES]
+            * torch.clamp(
+                logp_ratio,
+                1 - config.clip_param,  # pyright: ignore[reportOperatorIssue]  # clip is None
+                1 + config.clip_param,  # pyright: ignore[reportOperatorIssue]
+            ),
         )
         # X Silva uses mean here
 
@@ -106,7 +121,7 @@ class SilvaLearner(PPOTorchLearner):
         # Compute a value function loss.
         if config.use_critic:
             # If embeddings is not None, passes it trough self.vf; batch stays unused; which is equivalent
-            value_fn_out = module.compute_values(
+            value_fn_out: TensorType = module.compute_values(
                 batch,
                 embeddings=fwd_out.get(Columns.EMBEDDINGS),
             )
@@ -115,7 +130,7 @@ class SilvaLearner(PPOTorchLearner):
             if use_silva_loss:
                 _original_value_fn_out = value_fn_out
                 # If the value network has 2 outputs, take the one corresponding to the action taken
-                # TODO: something is wrong with the dimensions here when using lunar
+                # FIXME: something is wrong with the dimensions here when using lunar
                 if module.vf.output_dim != 1:  # type: ignore[attr-defined]
                     value_fn_out = value_fn_out[
                         torch.arange(0, len(value_fn_out)),

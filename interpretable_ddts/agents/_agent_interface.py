@@ -130,7 +130,7 @@ class AgentBase:
             action = action.item()
         return action  # type: ignore
 
-    def end_episode(self, reward, *, discrete_reward=None):
+    def end_episode(self, reward, *, discrete_reward: Optional[float] = None):
         """
         Perform the PPO update and store the reward
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict
+from typing_extensions import NotRequired
 
 import numpy as np
 import ray.train
@@ -48,10 +49,10 @@ def init_rule_list(num_rules, dim_in, dim_out):
 
 
 class ModelConfigDict(TypedDict):
-    bot_name: str
+    bot_name: NotRequired[str]
     num_rules: int
     rule_list: bool
-    save_output: bool
+    save_output: NotRequired[bool]
     use_gpu: bool
     action_use_softmax: bool
     vf_double_output: bool
@@ -65,6 +66,8 @@ class DDTModule(PPOTorchRLModule):
 
     CAN_USE_DISCRETE_EVAL = True
 
+    bot_name: Optional[str] = None
+
     def __init__(
         self,
         config: RLModuleConfig = DEPRECATED_VALUE,  # type: ignore[arg-type]  # use -1 here to avoid errors
@@ -73,7 +76,7 @@ class DDTModule(PPOTorchRLModule):
         action_space: Optional[gym.Space] = None,
         inference_only: Optional[bool] = None,
         learner_only: bool = False,
-        model_config: Optional[dict] = None,
+        model_config: Optional[dict[str, Any] | ModelConfigDict] = None,
         catalog_class=None,
     ) -> None:
         if config and config != DEPRECATED_VALUE:
@@ -100,13 +103,14 @@ class DDTModule(PPOTorchRLModule):
         # super().setup() # Might create more modules, e.g. encoder
         assert isinstance(self.model_config, dict)
 
-        self.bot_name = self.model_config["bot_name"] + "_"
+        if "bot_name" in self.model_config:
+            self.bot_name = self.model_config["bot_name"] + "_"
         num_rules: int = self.model_config["num_rules"]
         rule_list: bool = self.model_config["rule_list"]
         input_dim = self.observation_space.shape[0]  # type: ignore
         output_dim = int(self.action_space.n)  # type: ignore
         if rule_list:
-            if str(num_rules) + "_rules" not in self.bot_name:
+            if self.bot_name and (str(num_rules) + "_rules" not in self.bot_name):
                 self.bot_name += str(num_rules) + "_rules"
             init_weights, init_comparators, init_leaves = init_rule_list(
                 num_rules,
@@ -117,7 +121,7 @@ class DDTModule(PPOTorchRLModule):
             init_weights = None
             init_comparators = None
             init_leaves = num_rules
-            if str(num_rules) + "_leaves" not in self.bot_name:
+            if self.bot_name and (str(num_rules) + "_leaves" not in self.bot_name):
                 self.bot_name += str(num_rules) + "_leaves"
 
         # Use is_value=True to NOT apply the softmax and return logits
@@ -180,6 +184,8 @@ class LegacyDDTModule(DDTModule, AgentBase):
     Version of the DDTModule that is used by gym_runner.py
     it is compatible with the AgentBase interface
     """
+
+    bot_name: str  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @property
     def action_network(self):  # pyright: ignore[reportIncompatibleVariableOverride]
@@ -252,7 +258,7 @@ class LegacyDDTModule(DDTModule, AgentBase):
             new_agent.ppo = self.ppo
         return new_agent
 
-    def end_episode(self, reward, discrete_reward: Optional[float] = None):
+    def end_episode(self, reward, *, discrete_reward: Optional[float] = None):
         if self._duplicate:
             logging.warning("Calling end_episode on a duplicate agent")
         loss = AgentBase.end_episode(self, reward)

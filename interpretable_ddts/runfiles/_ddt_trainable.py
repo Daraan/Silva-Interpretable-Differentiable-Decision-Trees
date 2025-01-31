@@ -25,7 +25,7 @@ from ray.rllib.utils.metrics import (
 from ray.tune import logger as tune_logger
 
 from interpretable_ddts.agents.ddt_catalog import DDTCatalog
-from interpretable_ddts.agents.ddt_ppo_module import DDTModule
+from interpretable_ddts.agents.ddt_ppo_module import DDTModule, ModelConfigDict
 from interpretable_ddts.agents.ppo_learner import SilvaLearner
 from interpretable_ddts.runfiles._pbar_updates import update_pbar
 from ray_utilities.constants import (
@@ -154,19 +154,19 @@ def create_ddt_config(
     else:
         assert not TYPE_CHECKING or config.env
         init_env = gym.make(config.env.unwrapped.spec.id)  # pyright: ignore[reportOptionalMemberAccess]
+    # Note: legacy keys are updated below
+    model_config: ModelConfigDict = {
+        "rule_list": args["rule_list"],
+        "num_rules": args["num_leaves"],
+        "use_gpu": args["gpu"],
+        "vf_double_output": args["use_silva_loss"],
+        "action_use_softmax": args["use_silva_loss"],
+    }
     module_spec = RLModuleSpec(
         module_class=DDTModule,
         observation_space=init_env.observation_space,
         action_space=init_env.action_space,
-        model_config={
-            "bot_name": args["agent_type"] + args["env_type"],
-            "rule_list": args["rule_list"],
-            "num_rules": args["num_leaves"],
-            "use_gpu": args["gpu"],
-            "vf_double_output": args["use_silva_loss"],
-            "action_use_softmax": args["use_silva_loss"],
-            "use_silva_loss": args["use_silva_loss"],  # unused by model config
-        },
+        model_config=cast(dict[str, Any], model_config),
         catalog_class=DDTCatalog,
     )
     # module = module_spec.build()
@@ -223,13 +223,15 @@ def create_ddt_config(
         from interpretable_ddts.agents.ddt_ppo_module import LegacyDDTModule
 
         module_spec.module_class = LegacyDDTModule
-        module_spec.model_config.update(  # type: ignore
+        model_config: ModelConfigDict = module_spec.model_config  # type: ignore[assignment]
+        model_config.update(  # type: ignore
             {
+                "bot_name": args["agent_type"] + args["env_type"],
                 "save_output": False,  # TODO: Add checkpoint for legacy
                 "use_gpu": args["gpu"],
                 "vf_double_output": True,
                 "action_use_softmax": True,
-                "use_silva_loss": True,
+                # "use_silva_loss": True,
             },
         )
         config.evaluation(custom_evaluation_function=None)
