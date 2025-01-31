@@ -56,6 +56,22 @@ class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
         "<rule_list>",
     ]
 
+    PROJECT: str = "DDT-Silva"
+
+    @property
+    def project_name(self) -> str:
+        """Name for the output folder, wandb project, and comet workspace."""
+        return "dev-workspace" if self.args.test else self.PROJECT
+
+    @project_name.setter
+    def project_name(self, value: str):
+        logger.warning("Setting project name to %s. Prefer creation of a new class", value)
+        self.PROJECT = value
+
+    @property
+    def group_name(self) -> str:
+        return "_".join([self.args.agent_type, self.args.env_type, ("-test" if self.args.test else "")])
+
     def create_parser(self) -> DDTArgumentParser:
         return DDTArgumentParser()
 

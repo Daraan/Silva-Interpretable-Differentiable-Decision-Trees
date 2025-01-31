@@ -109,3 +109,6 @@ known_first_party = ["interpretable_ddts", "ray_utilities"]
 split_on_trailing_comma = true
 include_trailing_comma = true
 profile = "black"
+
+[tool.pyright]
+extraPaths = ["ray_utilities/"]
