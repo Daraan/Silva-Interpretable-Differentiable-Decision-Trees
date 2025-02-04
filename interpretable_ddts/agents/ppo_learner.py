@@ -19,10 +19,10 @@ from ray.rllib.utils.torch_utils import explained_variance
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ray.rllib.utils.typing import ModuleID
     import jax.numpy as jnp  # pyright: ignore[reportMissingImports]
     from numpy.typing import NDArray
     from ray.rllib.algorithms.ppo.ppo_rl_module import PPORLModule
+    from ray.rllib.utils.typing import ModuleID
 
     # rays typing is invalid, remove tf.Tensor for indexing
     TensorType: TypeAlias = Union[NDArray, "jnp.ndarray", "torch.Tensor"]

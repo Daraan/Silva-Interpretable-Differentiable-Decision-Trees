@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict
-from typing_extensions import NotRequired
 
 import numpy as np
 import ray.train
@@ -13,6 +12,7 @@ from ray.rllib.core.models.base import ACTOR, CRITIC, ENCODER_OUT
 from ray.rllib.core.rl_module.rl_module import RLModuleConfig
 from ray.rllib.utils.deprecation import DEPRECATED_VALUE
 from ray.rllib.utils.deprecation import logger as _deprecation_logger
+from typing_extensions import NotRequired
 
 from interpretable_ddts.agents._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt import DDT

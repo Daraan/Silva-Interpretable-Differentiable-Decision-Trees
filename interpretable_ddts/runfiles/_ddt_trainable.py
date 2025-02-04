@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import logging
-import math
 import os
 import tempfile
-from typing import TYPE_CHECKING, Any, Optional, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Mapping, Optional, TypeVar, cast
 
 import gymnasium as gym
 import ray
 import torch
 from ray import train
-from ray.air.integrations.comet import CometLoggerCallback
 from ray.experimental import tqdm_ray
 from ray.rllib.algorithms.callbacks import DefaultCallbacks, make_multi_callbacks
 from ray.rllib.algorithms.ppo import PPOConfig
@@ -28,23 +26,17 @@ from interpretable_ddts.agents.ddt_catalog import DDTCatalog
 from interpretable_ddts.agents.ddt_ppo_module import DDTModule, ModelConfigDict
 from interpretable_ddts.agents.ppo_learner import SilvaLearner
 from interpretable_ddts.runfiles._pbar_updates import update_pbar
-from ray_utilities.constants import (
-    DISC_EVAL_METRIC_RETURN_MEAN,
-    DISCRETE_EVALUATION_BEST_VIDEO,
-    DISCRETE_EVALUATION_WORST_VIDEO,
-    EVAL_METRIC_RETURN_MEAN,
-    EVALUATION_BEST_VIDEO,
-    EVALUATION_WORST_VIDEO,
-    TRAIN_METRIC_RETURN_MEAN,
-)
 from ray_utilities import is_pbar
 from ray_utilities.callbacks.algorithm.discrete_eval_callback import DiscreteEvalCallback
 from ray_utilities.callbacks.algorithm.env_render_callback import make_render_callback
-
+from ray_utilities.postprocessing import create_log_metrics, filter_metrics, remove_videos, strip_videos_metadata
+from ray_utilities.postprocessing import create_running_reward_updater
 
 if TYPE_CHECKING:
     from interpretable_ddts.runfiles.ddt_setup import DDTArgumentParser
     from ray_utilities.config.experiment_base import NamespaceType
+    from ray_utilities.typing import LogMetricsDict, StrictAlgorithmReturnData
+    from ray.rllib.algorithms.ppo.ppo import PPO
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +231,7 @@ def create_ddt_config(
     return config, module_spec
 
 
-def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=False):
+def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=False) -> StrictAlgorithmReturnData:
     """
     Args:
         hparams: The hyperparameters selected for the trial from the search space from ray tune.
@@ -251,92 +243,35 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
     args: dict = hparams["cli_args"]
     # TODO: this should use the parameters from the search space
     config, _ = create_ddt_config(args)
-    algo = config.build()
+    algo = cast("PPO", config.build())
 
     if use_pbar:
         pbar = tqdm_ray.tqdm(range(args["episodes"]), position=hparams.get("process_number", None))
     else:
         pbar = range(args["episodes"])
-    running_eval_rewards = []
-    running_disc_eval_rewards = []
-    running_rewards = []
-    result = {}
+    result: Mapping[str, Any] = {}
+    running_reward_updater = create_running_reward_updater()
+    running_eval_reward_updater = create_running_reward_updater()
+    running_disc_eval_reward_updater = create_running_reward_updater()
     for _episode in pbar:
-        result = algo.train()
-        # Results
-        # Training:
-        train_reward = result[ENV_RUNNER_RESULTS].get(EPISODE_RETURN_MEAN, float("nan"))
-        if not math.isnan(train_reward):
-            running_rewards.append(train_reward)
-        running_reward = sum(running_rewards[-100:]) / (
-            min(100, len(running_rewards)) or float("nan")  # nan for 0
-        )
+        # Train and get results
+        result = cast("StrictAlgorithmReturnData", algo.train())
+        # Reduce to key-metrics
+        metrics = create_log_metrics(result)
+
+        # Training
+        train_reward = metrics[ENV_RUNNER_RESULTS][EPISODE_RETURN_MEAN]
+        running_reward = running_reward_updater(train_reward)
+
         # Evaluation:
-        eval_results = result.get(EVALUATION_RESULTS, {})
-        eval_env_runner_results = eval_results.get(ENV_RUNNER_RESULTS, {})
-        eval_mean = eval_env_runner_results.get(EPISODE_RETURN_MEAN, float("nan"))
-        if not math.isnan(eval_mean):
-            running_eval_rewards.append(eval_mean)
-        running_eval_reward = sum(running_eval_rewards[-100:]) / (
-            min(100, len(running_eval_rewards)) or float("nan")  # nan for 0
-        )
+        eval_mean = metrics[EVALUATION_RESULTS][ENV_RUNNER_RESULTS][EPISODE_RETURN_MEAN]
+        running_eval_reward = running_eval_reward_updater(eval_mean)
+
         # Discrete rewards:
-        discrete_evaluation = eval_results.get("discrete", {})
-        disc_eval_env_runner_results = discrete_evaluation.get(ENV_RUNNER_RESULTS, {})
-        disc_eval_mean = disc_eval_env_runner_results.get(EPISODE_RETURN_MEAN, float("nan"))
-        if not math.isnan(disc_eval_mean):
-            running_disc_eval_rewards.append(disc_eval_mean)
-        elif running_disc_eval_rewards:  # TEMP: As long as metrics logger for discrete evaluation is not shared
-            disc_eval_mean = running_disc_eval_rewards[-1]
-        disc_running_eval_reward = sum(running_disc_eval_rewards[-100:]) / (
-            min(100, len(running_disc_eval_rewards)) or float("nan")  # nan for 0
-        )
+        disc_eval_mean = metrics[EVALUATION_RESULTS]["discrete"][ENV_RUNNER_RESULTS][EPISODE_RETURN_MEAN]
+        disc_running_eval_reward = running_disc_eval_reward_updater(disc_eval_mean)
 
-        # NOTE: The csv logger will only log keys that are present in the first result,
-        #       i.e. the videos will not be logged if they are added later; but everytime otherwise!
-        metrics = {
-            TRAIN_METRIC_RETURN_MEAN: result[ENV_RUNNER_RESULTS].get(
-                EPISODE_RETURN_MEAN,
-                float("nan"),
-            ),
-            EVAL_METRIC_RETURN_MEAN: eval_mean,
-            DISC_EVAL_METRIC_RETURN_MEAN: disc_eval_mean,
-        }
-        if EVALUATION_RESULTS in result:
-            # Store videos
-            if evaluation_videos_best := result[EVALUATION_RESULTS][ENV_RUNNER_RESULTS].get(
-                "episode_videos_best",
-            ):
-                metrics[EVALUATION_BEST_VIDEO] = {
-                    "video": evaluation_videos_best,
-                    "reward": result[EVALUATION_RESULTS][ENV_RUNNER_RESULTS][EPISODE_RETURN_MAX],
-                }
-            if evaluation_videos_worst := result[EVALUATION_RESULTS][ENV_RUNNER_RESULTS].get(
-                "episode_videos_worst",
-            ):
-                metrics[EVALUATION_WORST_VIDEO] = {
-                    "video": evaluation_videos_worst,
-                    "reward": result[EVALUATION_RESULTS][ENV_RUNNER_RESULTS][EPISODE_RETURN_MIN],
-                }
-            if discrete_evaluation_videos_best := result[EVALUATION_RESULTS]["discrete"][ENV_RUNNER_RESULTS].get(
-                "episode_videos_best"
-            ):
-                metrics[DISCRETE_EVALUATION_BEST_VIDEO] = {
-                    "video": discrete_evaluation_videos_best,
-                    "reward": result[EVALUATION_RESULTS]["discrete"][ENV_RUNNER_RESULTS][EPISODE_RETURN_MAX],
-                }
-            if discrete_evaluation_videos_worst := result[EVALUATION_RESULTS]["discrete"][ENV_RUNNER_RESULTS].get(
-                "episode_videos_worst"
-            ):
-                metrics[DISCRETE_EVALUATION_WORST_VIDEO] = {
-                    "video": discrete_evaluation_videos_worst,
-                    "reward": result[EVALUATION_RESULTS]["discrete"][ENV_RUNNER_RESULTS][EPISODE_RETURN_MIN],
-                }
-            # Check for NaN values, if they are not the evaluation metrics warn.
-            if any(isinstance(value, float) and math.isnan(value) for value in metrics.values()):
-                logger.warning("NaN values in metrics: %s", metrics)
-
-        # Checkpoint & metrics
+        # Checkpoint
         if False and not disable_report and ray.train.get_context().get_world_rank() == 0:
             with tempfile.TemporaryDirectory() as tempdir:
                 torch.save(
@@ -354,7 +289,7 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
         update_pbar(
             pbar,
             train_results={
-                "mean": metrics[TRAIN_METRIC_RETURN_MEAN],
+                "mean": metrics[ENV_RUNNER_RESULTS][EPISODE_RETURN_MEAN],
                 "max": result["env_runners"].get("episode_return_max", float("nan")),
                 "roll": running_reward,
             },
@@ -368,13 +303,14 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
             },
         )
     if EVALUATION_RESULTS not in result:
-        result[EVALUATION_RESULTS] = algo.evaluate()
+        result[EVALUATION_RESULTS] = algo.evaluate()  # type: ignore[assignment]
     result["done"] = True
     if args.get("comment"):
         result["comment"] = args["comment"]
+
     # Postprocess results and return
     try:
-        reduced_results = reduce_results(
+        reduced_results = filter_metrics(
             result,
             extra_keys_to_keep=[
                 # Should log as video! not array
@@ -389,60 +325,3 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
         return result
     else:
         return reduced_results
-
-
-# NOTE: This should not overlap!
-RESULTS_TO_KEEP = {
-    (ENV_RUNNER_RESULTS, EPISODE_RETURN_MEAN),
-    # (ENV_RUNNER_RESULTS, NUM_EPISODES),
-    (EVALUATION_RESULTS, ENV_RUNNER_RESULTS, EPISODE_RETURN_MEAN),
-    (EVALUATION_RESULTS, "discrete", ENV_RUNNER_RESULTS, EPISODE_RETURN_MEAN),
-    ("comment",),
-}
-RESULTS_TO_KEEP.update((key,) for key in CometLoggerCallback._other_results)
-RESULTS_TO_KEEP.update((key,) for key in CometLoggerCallback._system_results)
-RESULTS_TO_KEEP.update((key,) for key in CometLoggerCallback._exclude_results)
-assert all(isinstance(key, (tuple, list)) for key in RESULTS_TO_KEEP)
-
-_MISSING = object()
-
-
-def _find_item(obj: dict[str, Any], keys: list[str]) -> Any:
-    if len(keys) == 1:
-        return obj.get(keys[0], _MISSING)
-    value = obj.get(keys[0], _MISSING)
-    if isinstance(value, dict):
-        return _find_item(value, keys[1:])
-    if value is not _MISSING and len(keys) > 0:
-        raise TypeError(f"Expected dict at {keys[0]} but got {value}")
-    return value
-
-
-def reduce_results(
-    results: dict[str, Any], extra_keys_to_keep: Optional[list[tuple[str, ...]]] = None
-) -> dict[str, Any]:
-    # from omegaconf import OmegaConf
-    # res = OmegaConf.create(results, flags={"allow_objects": True})
-    # return OmegaConf.to_container(OmegaConf.merge((OmegaConf.select(res, key) for key in RESULTS_TO_KEEP)))
-
-    reduced: dict[str, Any] = {}
-    _count = 0
-    if extra_keys_to_keep:
-        keys_to_keep = RESULTS_TO_KEEP.copy()
-        keys_to_keep.update(extra_keys_to_keep)
-    else:
-        keys_to_keep = RESULTS_TO_KEEP
-
-    for keys in keys_to_keep:
-        value = _find_item(results, keys if not isinstance(keys, str) else [keys])
-        if value is not _MISSING:
-            sub_dir = reduced
-            for key in keys[:-1]:
-                sub_dir = sub_dir.setdefault(key, {})
-            if keys[-1] in sub_dir:
-                raise ValueError(f"Key {keys[-1]} already exists in {sub_dir}")
-            sub_dir[keys[-1]] = value
-            _count += 1
-    if _count != len(RESULTS_TO_KEEP):
-        logger.warning("Reduced results do not match the expected amount of keys: %s", reduced)
-    return reduced
