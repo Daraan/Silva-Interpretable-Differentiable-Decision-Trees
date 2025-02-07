@@ -4,10 +4,12 @@ interpretable_ddts/models_first
 interpretable_ddts/models_recreation
 interpretable_ddts/txts_first
 interpretable_ddts/outputs/
+temp_dir/
 models/
 txts/
 */*/tree.png
 videos/
+*.mp4
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

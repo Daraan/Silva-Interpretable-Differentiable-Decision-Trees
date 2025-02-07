@@ -5,31 +5,60 @@ import argparse
 import copy
 from contextlib import nullcontext
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Optional, TypeGuard, Union, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Iterable,
+    Optional,
+    TypeGuard,
+    Union,
+    cast,
+    overload,
+)
 
 import gymnasium as gym
 import numpy as np
 import torch.multiprocessing as mp
 from gymnasium.envs.box2d.lunar_lander import LunarLander
 from gymnasium.envs.classic_control.cartpole import CartPoleEnv
-from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo  # pyright: ignore[reportPrivateImportUsage]
+from gymnasium.wrappers import (  # pyright: ignore[reportPrivateImportUsage]
+    RecordEpisodeStatistics,
+    RecordVideo,
+)
 from joblib import Parallel, delayed
 from tqdm import tqdm
+from typing_extensions import Literal
 
 from interpretable_ddts.agents.ddt_agent import DDTAgent
 from interpretable_ddts.agents.mlp_agent import MLPAgent
 from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
 from interpretable_ddts.runfiles._pbar_updates import update_pbar
-from ray_utilities.constants import ENV_RUNNER_RESULTS, EPISODE_RETURN_MEAN, EVALUATION_RESULTS
+from interpretable_ddts.runfiles.ddt_setup import DDTArgumentParser
 from ray_utilities import GYM_V_0_26, seed_everything
+from ray_utilities.constants import (
+    ENV_RUNNER_RESULTS,
+    EPISODE_RETURN_MEAN,
+    EVALUATION_RESULTS,
+)
 
 if TYPE_CHECKING:
     from multiprocessing.synchronize import Lock
 
     from gymnasium.core import ActType, ObsType
-    from ray.rllib.core.rl_module.rl_module import RLModuleSpec  # for performance import only if used  # noqa: TC004
+    from ray.rllib.core.rl_module.rl_module import (  # for performance import only if used  # noqa: TC004
+        RLModuleSpec,
+    )
 
     from interpretable_ddts.agents._agent_interface import AgentBase
+    from ray_utilities import AlgorithmReturnData
+
+
+class LegacyDefaultArgumentParser(DDTArgumentParser):
+    dim_in: int
+    dim_out: int
+    process_number: int = 0
+    num_hidden: int = 0
+    use_pbar: int | type[tqdm]
 
 
 def run_episode(
@@ -240,14 +269,36 @@ def create_rlib_agent(args, init_env: gym.Env):
     return policy_agent
 
 
+@overload
+def start_process(
+    i: dict[str, Any],
+    args: argparse.Namespace | LegacyDefaultArgumentParser,
+    init_env: Optional[gym.Env] = ...,
+    lock: Optional[Lock] = ...,
+    *,
+    use_rllib_output: Literal[True],
+) -> AlgorithmReturnData: ...
+
+
+@overload
+def start_process(
+    i: int,
+    args: argparse.Namespace | LegacyDefaultArgumentParser,
+    init_env: Optional[gym.Env] = ...,
+    lock: Optional[Lock] = ...,
+    *,
+    use_rllib_output: bool = ...,
+) -> dict[str, Any]: ...
+
+
 def start_process(
     i,
-    args: argparse.Namespace,
+    args: argparse.Namespace | LegacyDefaultArgumentParser,
     init_env: Optional[gym.Env] = None,
     lock: Optional[Lock] = None,
     *,
     use_rllib_output: bool = False,
-):
+) -> AlgorithmReturnData | dict[str, Any]:
     """Wrapper of main that can be used in parallel."""
     agent_type: "str | RLModuleSpec" = args.agent_type
     env_type: str | gym.Env = args.env_type
@@ -270,6 +321,7 @@ def start_process(
     # Use a lock for file creation
     with lock or nullcontext():
         if agent_type == "ddt":
+            assert not TYPE_CHECKING or isinstance(args, LegacyDefaultArgumentParser)
             policy_agent = DDTAgent(
                 bot_name=bot_name,
                 input_dim=args.dim_in,
@@ -279,6 +331,7 @@ def start_process(
                 save_output=not args.test,
             )
         elif agent_type == "mlp":
+            assert not TYPE_CHECKING or isinstance(args, LegacyDefaultArgumentParser)
             policy_agent = MLPAgent(
                 bot_name=bot_name,
                 input_dim=args.dim_in,
@@ -319,20 +372,24 @@ def start_process(
         render_mode=args.render_mode,
     )
     if not use_rllib_output:
-        results = {
-            "running_reward_mean": np.mean(reward_array[-100:]),
+        results_legacy: dict[str, Any] = {
+            "running_reward_mean": np.mean(reward_array[-100:]).item(),
             "num_episodes": len(reward_array),
             "perfect_episodes": sum([1 for r in reward_array if r >= 499]),
         }
+        results = results_legacy
     else:
-        results = {
+        rllib_results: AlgorithmReturnData = {
             EVALUATION_RESULTS: {
                 ENV_RUNNER_RESULTS: {
                     EPISODE_RETURN_MEAN: max(reward_array[-5:]),
                 },
             },
+            "done": True,
         }
-    if "comment" in args:
+        results = rllib_results
+    if getattr(args, "comment", None):
+        assert isinstance(args.comment, str)
         results["comment"] = args.comment
     return results
 
