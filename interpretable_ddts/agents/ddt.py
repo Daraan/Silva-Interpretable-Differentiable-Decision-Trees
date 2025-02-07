@@ -259,6 +259,8 @@ class DDT(nn.Module):
         return self.softmax(actions)
 
     def create_discrete_copy(self, *, preserve_actions: bool = True) -> "DDT":
-        from interpretable_ddts.opt_helpers.discretization import convert_to_discrete  # lazy load circular.
+        from interpretable_ddts.opt_helpers.discretization import (
+            convert_to_discrete,  # lazy load circular.
+        )
 
         return convert_to_discrete(self, preserve_actions=preserve_actions)

@@ -1,19 +1,21 @@
-import sc2
-from sc2 import Race
+import argparse
 import os
-from sc2.constants import *
-from sc2.position import Pointlike, Point2
-from sc2.player import Bot
-import torch
 from typing import Any, Optional, Tuple
+
+import numpy as np
+import sc2
+import torch
+import torch.multiprocessing as mp
+from sc2 import Race
+from sc2.constants import *
+from sc2.player import Bot
+from sc2.position import Point2, Pointlike
+
 from interpretable_ddts.agents._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt_agent import DDTAgent
 from interpretable_ddts.agents.mlp_agent import MLPAgent
-from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
 from interpretable_ddts.opt_helpers import sc_helpers
-import numpy as np
-import torch.multiprocessing as mp
-import argparse
+from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
 
 DEBUG = False
 SUPER_DEBUG = False

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict
-from typing_extensions import NotRequired
 
 import numpy as np
 import ray.train
@@ -13,6 +12,7 @@ from ray.rllib.core.models.base import ACTOR, CRITIC, ENCODER_OUT
 from ray.rllib.core.rl_module.rl_module import RLModuleConfig
 from ray.rllib.utils.deprecation import DEPRECATED_VALUE
 from ray.rllib.utils.deprecation import logger as _deprecation_logger
+from typing_extensions import NotRequired
 
 from interpretable_ddts.agents._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt import DDT
@@ -20,7 +20,11 @@ from interpretable_ddts.opt_helpers import ppo_update
 from interpretable_ddts.opt_helpers.replay_buffer import (
     ReplayBufferSingleAgent as SilvaReplayBuffer,
 )
-from ray_utilities.constants import DISC_EVAL_METRIC_RETURN_MEAN, EVAL_METRIC_RETURN_MEAN
+
+from ray_utilities.constants import (
+    DISC_EVAL_METRIC_RETURN_MEAN,
+    EVAL_METRIC_RETURN_MEAN,
+)
 
 # This suppresses a deprecation warning from RLModuleConfig
 __old_level = _deprecation_logger.getEffectiveLevel()

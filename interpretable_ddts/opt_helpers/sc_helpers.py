@@ -1,7 +1,8 @@
-from sc2.constants import *
-from sc2.ids.unit_typeid import *
 import numpy as np
 from sc2 import Race
+from sc2.constants import *
+from sc2.ids.unit_typeid import *
+
 MY_POSSIBLES = [PROBE, ZEALOT, STALKER, SENTRY, ADEPT, HIGHTEMPLAR, DARKTEMPLAR, OBSERVER, WARPPRISM,
                 IMMORTAL, COLOSSUS, DISRUPTOR, PHOENIX, VOIDRAY, ORACLE, TEMPEST, CARRIER, INTERCEPTOR,
                 MOTHERSHIP, NEXUS, PYLON, ASSIMILATOR, GATEWAY, WARPGATE, FORGE, CYBERNETICSCORE, PHOTONCANNON,

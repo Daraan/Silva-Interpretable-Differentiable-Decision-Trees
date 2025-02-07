@@ -3,11 +3,14 @@ from __future__ import annotations
 import logging
 from argparse import Namespace
 from functools import partial
-from typing import Any, Callable, ClassVar
+from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 from ray.rllib.algorithms.ppo.ppo import PPOConfig
 
-from interpretable_ddts.runfiles._ddt_trainable import build_and_train, create_ddt_config
+from interpretable_ddts.runfiles._ddt_trainable import (
+    build_and_train,
+    create_ddt_config,
+)
 from ray_utilities.config.experiment_base import (
     DefaultArgumentParser,
     ExperimentSetupBase,

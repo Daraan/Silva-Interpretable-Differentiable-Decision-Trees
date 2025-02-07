@@ -8,9 +8,10 @@ import ray
 from packaging.version import parse as parse_version
 from ray.air.integrations.wandb import setup_wandb
 
+# Import comet before
+from ray_utilities.comet import comet_upload_offline_experiments  # fmt: skip
 from interpretable_ddts.runfiles._ddt_trainable import build_and_train
 from interpretable_ddts.runfiles.ddt_setup import DDTSetup
-from ray_utilities.comet import comet_upload_offline_experiments
 
 os.environ["RAY_COLOR_PREFIX"] = "1"
 
