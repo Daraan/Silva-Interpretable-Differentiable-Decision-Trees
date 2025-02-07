@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import torch
@@ -42,13 +42,14 @@ class PPO:
     def batch_updates(self, rollouts: "SilvaReplayBuffer", agent_in: "AgentBase"):
         if self.actor.input_dim < 10:
             batch_size = max(rollouts.step // 16, 1)
-            num_iters = rollouts.step // batch_size
+            num_iters = max(rollouts.step // batch_size, 1)
         else:
             num_iters = 4
             batch_size = 8
         # Aboves batch_size and iterations appear to be much to small for effective training
         num_iters = 20  # Note: Adjustment of original code
         batch_size = 36
+
         for _iteration in range(num_iters):
             total_action_loss = torch.Tensor([0])
             total_value_loss = torch.Tensor([0])
@@ -57,7 +58,7 @@ class PPO:
                 total_value_loss = total_value_loss.cuda()
 
             samples = [rollouts.sample() for _ in range(batch_size)]
-            samples = [sample for sample in samples if sample is not False]
+            samples = cast(list[dict[str, Any]], [sample for sample in samples if sample is not False])
             if len(samples) <= 0:
                 continue
             state = torch.cat([sample["state"][0] for sample in samples], dim=0)
@@ -119,4 +120,4 @@ class PPO:
 
         agent_in.reset()
         self.epoch_counter += 1
-        return total_action_loss.item(), total_value_loss.item()
+        return total_action_loss.item(), total_value_loss.item()  # pyright: ignore[reportPossiblyUnboundVariable]

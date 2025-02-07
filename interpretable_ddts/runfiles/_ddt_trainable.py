@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+# pyright: enableExperimentalFeatures=true
+
 import logging
 import os
 import tempfile
-from typing import TYPE_CHECKING, Any, Mapping, Optional, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Optional, TypeVar, cast
 
 import gymnasium as gym
 import ray
@@ -33,9 +35,12 @@ from ray_utilities.postprocessing import (
     create_log_metrics,
     create_running_reward_updater,
     filter_metrics,
+    verify_keys,
 )
+from ray_utilities.typing.trainable_return import TrainableReturnData
 
 if TYPE_CHECKING:
+    from ray_utilities.typing.metrics import LogMetricsDict
     from ray.rllib.algorithms.ppo.ppo import PPO
 
     from interpretable_ddts.runfiles.ddt_setup import DDTArgumentParser
@@ -235,7 +240,7 @@ def create_ddt_config(
     return config, module_spec
 
 
-def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=False) -> StrictAlgorithmReturnData:
+def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=False) -> TrainableReturnData:
     """
     Args:
         hparams: The hyperparameters selected for the trial from the search space from ray tune.
@@ -253,10 +258,14 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
         pbar = tqdm_ray.tqdm(range(args["episodes"]), position=hparams.get("process_number", None))
     else:
         pbar = range(args["episodes"])
-    result: Mapping[str, Any] = {}
     running_reward_updater = create_running_reward_updater()
     running_eval_reward_updater = create_running_reward_updater()
     running_disc_eval_reward_updater = create_running_reward_updater()
+    # Prevent unbound variables
+    result: StrictAlgorithmReturnData = {}  # type: ignore[assignment]
+    metrics: TrainableReturnData | LogMetricsDict = {}  # type: ignore[assignment]
+    disc_eval_mean = None
+    disc_running_eval_reward = None
     for _episode in pbar:
         # Train and get results
         result = cast("StrictAlgorithmReturnData", algo.train())
@@ -275,8 +284,9 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
         running_eval_reward = running_eval_reward_updater(eval_mean)
 
         # Discrete rewards:
-        disc_eval_mean = metrics[EVALUATION_RESULTS]["discrete"][ENV_RUNNER_RESULTS][EPISODE_RETURN_MEAN]
-        disc_running_eval_reward = running_disc_eval_reward_updater(disc_eval_mean)
+        if "discrete" in metrics[EVALUATION_RESULTS]:
+            disc_eval_mean = metrics[EVALUATION_RESULTS]["discrete"][ENV_RUNNER_RESULTS][EPISODE_RETURN_MEAN]  # pyright: ignore[reportTypedDictNotRequiredAccess]
+            disc_running_eval_reward = running_disc_eval_reward_updater(disc_eval_mean)
 
         # Checkpoint
         if False and not disable_report and ray.train.get_context().get_world_rank() == 0:
@@ -304,21 +314,29 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
                 "mean": eval_mean,
                 "roll": running_eval_reward,
             },
-            discrete_eval_results={
-                "mean": disc_eval_mean,
-                "roll": disc_running_eval_reward,
-            },
+            discrete_eval_results=(
+                {
+                    "mean": disc_eval_mean,
+                    "roll": disc_running_eval_reward,
+                }
+                if disc_eval_mean is not None and disc_running_eval_reward
+                else None
+            ),
         )
-    if EVALUATION_RESULTS not in result:
-        result[EVALUATION_RESULTS] = algo.evaluate()  # type: ignore[assignment]
-    result["done"] = True
+    final_results = cast(TrainableReturnData, metrics)
+    if "trial_id" not in final_results:
+        final_results["trial_id"] = result["trial_id"]
+    if EVALUATION_RESULTS not in final_results:
+        final_results[EVALUATION_RESULTS] = algo.evaluate()  # type: ignore[assignment]
+    if "done" not in final_results:
+        final_results["done"] = True
     if args.get("comment"):
-        result["comment"] = args["comment"]
+        final_results["comment"] = args["comment"]
 
     # Postprocess results and return
     try:
         reduced_results = filter_metrics(
-            result,
+            final_results,
             extra_keys_to_keep=[
                 # Should log as video! not array
                 # (EVALUATION_RESULTS, ENV_RUNNER_RESULTS, "episode_videos_best"),
@@ -326,9 +344,12 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
                 # (EVALUATION_RESULTS, "discrete", ENV_RUNNER_RESULTS, "episode_videos_best"),
                 # (EVALUATION_RESULTS, "discrete", ENV_RUNNER_RESULTS, "episode_videos_worst"),
             ],
+            cast_to=TrainableReturnData,
         )  # if not args["test"] else [(LEARNER_RESULTS,)])
     except Exception:
         logger.exception("Failed to reduce results")
-        return result
+        verify_keys(final_results, TrainableReturnData)
+        return final_results
     else:
+        assert verify_keys(reduced_results, TrainableReturnData)
         return reduced_results

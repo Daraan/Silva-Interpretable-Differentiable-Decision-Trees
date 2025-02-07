@@ -21,10 +21,7 @@ import numpy as np
 import torch.multiprocessing as mp
 from gymnasium.envs.box2d.lunar_lander import LunarLander
 from gymnasium.envs.classic_control.cartpole import CartPoleEnv
-from gymnasium.wrappers import (  # pyright: ignore[reportPrivateImportUsage]
-    RecordEpisodeStatistics,
-    RecordVideo,
-)
+from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo  # pyright: ignore[reportPrivateImportUsage]
 from joblib import Parallel, delayed
 from tqdm import tqdm
 from typing_extensions import Literal
@@ -42,6 +39,7 @@ from ray_utilities.constants import (
 )
 
 if TYPE_CHECKING:
+    from ray_utilities.typing.trainable_return import TrainableReturnData
     from multiprocessing.synchronize import Lock
 
     from gymnasium.core import ActType, ObsType
@@ -50,7 +48,6 @@ if TYPE_CHECKING:
     )
 
     from interpretable_ddts.agents._agent_interface import AgentBase
-    from ray_utilities import AlgorithmReturnData
 
 
 class LegacyDefaultArgumentParser(DDTArgumentParser):
@@ -277,7 +274,7 @@ def start_process(
     lock: Optional[Lock] = ...,
     *,
     use_rllib_output: Literal[True],
-) -> AlgorithmReturnData: ...
+) -> TrainableReturnData: ...
 
 
 @overload
@@ -298,7 +295,7 @@ def start_process(
     lock: Optional[Lock] = None,
     *,
     use_rllib_output: bool = False,
-) -> AlgorithmReturnData | dict[str, Any]:
+) -> TrainableReturnData | dict[str, Any]:
     """Wrapper of main that can be used in parallel."""
     agent_type: "str | RLModuleSpec" = args.agent_type
     env_type: str | gym.Env = args.env_type
@@ -379,7 +376,7 @@ def start_process(
         }
         results = results_legacy
     else:
-        rllib_results: AlgorithmReturnData = {
+        rllib_results: TrainableReturnData = {
             EVALUATION_RESULTS: {
                 ENV_RUNNER_RESULTS: {
                     EPISODE_RETURN_MEAN: max(reward_array[-5:]),

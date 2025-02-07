@@ -18,7 +18,7 @@ from ray_utilities.config.experiment_base import (
 from ray_utilities.environment import create_env
 
 if TYPE_CHECKING:
-    from ray_utilities import AlgorithmReturnData
+    from ray_utilities.typing.trainable_return import TrainableReturnData
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,7 @@ class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
 
     # region Config and Trainable
 
-    def create_trainable(self) -> Callable[[dict[str, Any]], AlgorithmReturnData]:
+    def create_trainable(self) -> Callable[[dict[str, Any]], TrainableReturnData]:
         if self.args.legacy:
             # Do not use an algorithm but the gym_runner.py code
             from ray.experimental import tqdm_ray
