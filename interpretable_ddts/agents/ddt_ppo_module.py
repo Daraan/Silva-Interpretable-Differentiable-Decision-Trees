@@ -83,7 +83,7 @@ class DDTModule(PPOTorchRLModule):
         model_config: Optional[dict[str, Any] | ModelConfigDict] = None,
         catalog_class=None,
     ) -> None:
-        if config and config != DEPRECATED_VALUE:
+        if config and config != DEPRECATED_VALUE:  # type: ignore[comparison-overlap]
             super().__init__(
                 config,
                 observation_space=observation_space,

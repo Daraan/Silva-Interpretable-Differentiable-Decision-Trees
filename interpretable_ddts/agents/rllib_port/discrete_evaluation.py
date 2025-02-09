@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+# pyright: reportPossiblyUnboundVariable=warning
+
+from typing import TYPE_CHECKING, cast
 
 from ray.rllib.evaluation.metrics import summarize_episodes
 from ray.rllib.utils.metrics import (
@@ -17,6 +19,8 @@ if TYPE_CHECKING:
     from ray.rllib.algorithms import Algorithm
     from ray.rllib.env.env_runner_group import EnvRunnerGroup
     from ray.rllib.env.single_agent_env_runner import SingleAgentEnvRunner
+    from ray.rllib.policy.sample_batch import SampleBatch, MultiAgentBatch
+    from ray.rllib.evaluation.metrics import RolloutMetrics
 
     from interpretable_ddts.agents.ddt_ppo_module import DDTModule
 
@@ -50,20 +54,21 @@ def discrete_evaluate_on_local_env_runner(
     all_batches = []
     if self.config.enable_env_runner_and_connector_v2:
         episodes = env_runner.sample(
-            num_timesteps=duration if unit == "timesteps" else None,
-            num_episodes=duration if unit == "episodes" else None,
+            num_timesteps=duration if unit == "timesteps" else None,  # pyright: ignore[reportArgumentType]
+            num_episodes=duration if unit == "episodes" else None,  # pyright: ignore[reportArgumentType]
         )
         agent_steps += sum(e.agent_steps() for e in episodes)
         env_steps += sum(e.env_steps() for e in episodes)
     elif unit == "episodes":
+        # OLD API
         for _ in range(duration):
-            batch = env_runner.sample()
+            batch: SampleBatch | MultiAgentBatch = env_runner.sample()  # type: ignore[assignment]
             agent_steps += batch.agent_steps()
             env_steps += batch.env_steps()
             if self.reward_estimators:
                 all_batches.append(batch)
     else:
-        batch = env_runner.sample()
+        batch: SampleBatch | MultiAgentBatch = env_runner.sample()  # type: ignore[assignment]
         agent_steps += batch.agent_steps()
         env_steps += batch.env_steps()
         if self.reward_estimators:
@@ -72,10 +77,12 @@ def discrete_evaluate_on_local_env_runner(
     env_runner_results = env_runner.get_metrics()
 
     if not self.config.enable_env_runner_and_connector_v2:
+        # OLD API
+        env_runner_results = cast("list[RolloutMetrics]", env_runner_results)
         env_runner_results = summarize_episodes(
             env_runner_results,
             env_runner_results,
-            keep_custom_metrics=eval_cfg.keep_per_episode_custom_metrics,
+            keep_custom_metrics=eval_cfg.keep_per_episode_custom_metrics,  # pyright: ignore
         )
     else:
         metrics_logger.log_dict(
@@ -88,14 +95,16 @@ def discrete_evaluate_on_local_env_runner(
 
 
 def eval_with_discrete(self: Algorithm, eval_workers: EnvRunnerGroup) -> tuple[dict, int, int]:
-    local_runner = self.env_runner_group.local_env_runner
-    module: DDTModule = local_runner.module
+    # OLD IDEA, new implementation above
+    local_runner: SingleAgentEnvRunner = self.env_runner_group.local_env_runner  # pyright: ignore
+    module: DDTModule = local_runner.module  # type: ignore[assignment]
     if getattr(module, "CAN_USE_DISCRETE_EVAL", False):
         options = (False, True)
     else:
         options = (False,)
 
     combined_eval_results = {}
+    env_steps = agent_steps = 0
     for discrete in options:
         if discrete:
             metrics_backup = self.metrics
@@ -110,7 +119,7 @@ def eval_with_discrete(self: Algorithm, eval_workers: EnvRunnerGroup) -> tuple[d
             )
             # AttributeError: 'SingleAgentEnvRunner' object has no attribute 'foreach_env'
 
-        if eval_workers is None:
+        if eval_workers is None:  # pyright: ignore[reportUnnecessaryComparison]
             (
                 eval_results,
                 env_steps,
@@ -163,6 +172,6 @@ def eval_with_discrete(self: Algorithm, eval_workers: EnvRunnerGroup) -> tuple[d
         else:
             if eval_results:
                 combined_eval_results = {**combined_eval_results, **eval_results}
-            agent_steps_normal = agent_steps
-            env_steps_normal = env_steps
-    return combined_eval_results, env_steps_normal, agent_steps_normal
+            env_steps = 0
+            agent_steps = 0
+    return combined_eval_results, env_steps, agent_steps

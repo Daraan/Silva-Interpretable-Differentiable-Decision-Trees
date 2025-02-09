@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import functools
 import logging
 from argparse import Namespace
 from functools import partial
-from typing import TYPE_CHECKING, Any, Callable, ClassVar
+from typing import Any, Callable, ClassVar
 
 from ray.rllib.algorithms.ppo.ppo import PPOConfig
 
@@ -16,9 +17,8 @@ from ray_utilities.config.experiment_base import (
     ExperimentSetupBase,
 )
 from ray_utilities.environment import create_env
-
-if TYPE_CHECKING:
-    from ray_utilities.typing.trainable_return import TrainableReturnData
+from ray_utilities.postprocessing import verify_return
+from ray_utilities.typing.trainable_return import TrainableReturnData
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
         assert args.agent_type == "ddt", f"Only DDT is supported, got {args.agent_type}"
         if args.agent_type == "ddt" and args.num_hidden:
             raise ValueError("Do not use --num_hidden with DDT")
-        if args.agent_type == "mlp" and args.num_hidden:
+        if args.agent_type == "mlp" and args.num_hidden:  # type: ignore[comparison-overlap]
             raise ValueError("Must specify --num_hidden with MLP")
         if not args.test and not args.comet:
             logger.warning("Not in test mode and comet disabled. Will not log to Comet")
@@ -147,9 +147,13 @@ class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
                 ),
                 use_rllib_output=True,
             )
-            return trainable
-
-        trainable = partial(build_and_train, use_pbar=True)
+            wraps_wrapper = functools.wraps(gym_runner.start_process)
+        else:
+            wraps_wrapper = functools.wraps(build_and_train)
+            trainable = partial(build_and_train, use_pbar=True)
+        # Wrap decorator for checking
+        trainable = verify_return(TrainableReturnData)(trainable)
+        trainable = wraps_wrapper(trainable)
         return trainable
 
     # endregion
