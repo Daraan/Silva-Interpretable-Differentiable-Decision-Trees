@@ -1,28 +1,19 @@
 from __future__ import annotations
 
-# pyright: reportPossiblyUnboundVariable=warning
-
 from typing import TYPE_CHECKING, cast
 
 from ray.rllib.evaluation.metrics import summarize_episodes
 from ray.rllib.utils.metrics import (
     ENV_RUNNER_RESULTS,
     EVALUATION_RESULTS,
-    NUM_AGENT_STEPS_SAMPLED_LIFETIME,
-    NUM_ENV_STEPS_SAMPLED_LIFETIME,
-    NUM_EPISODES,
-    NUM_EPISODES_LIFETIME,
 )
-from ray.rllib.utils.metrics.metrics_logger import MetricsLogger
 
 if TYPE_CHECKING:
+    from ray.rllib.utils.metrics.metrics_logger import MetricsLogger
     from ray.rllib.algorithms import Algorithm
-    from ray.rllib.env.env_runner_group import EnvRunnerGroup
     from ray.rllib.env.single_agent_env_runner import SingleAgentEnvRunner
     from ray.rllib.policy.sample_batch import SampleBatch, MultiAgentBatch
     from ray.rllib.evaluation.metrics import RolloutMetrics
-
-    from interpretable_ddts.agents.ddt_ppo_module import DDTModule
 
 
 def discrete_evaluate_on_local_env_runner(

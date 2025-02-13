@@ -30,12 +30,13 @@ from interpretable_ddts.agents.ddt_agent import DDTAgent
 from interpretable_ddts.agents.mlp_agent import MLPAgent
 from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
 from interpretable_ddts.runfiles._pbar_updates import update_pbar
-from interpretable_ddts.runfiles.ddt_setup import DDTArgumentParser
-from ray_utilities import GYM_V_0_26, seed_everything
+from interpretable_ddts.ddt_setup import DDTArgumentParser
+from ray_utilities import seed_everything
 from ray_utilities.constants import (
     ENV_RUNNER_RESULTS,
     EPISODE_RETURN_MEAN,
     EVALUATION_RESULTS,
+    GYM_V_0_26,
 )
 
 if TYPE_CHECKING:
@@ -137,6 +138,7 @@ def main(
             env = gym.make(env, render_mode=render_mode)
     else:
         assert env.render_mode == render_mode, "Render mode mismatch"
+    env_name = env.unwrapped.spec.id  # pyright: ignore[reportOptionalMemberAccess]
     if render_mode is not None:
         env = RecordVideo(
             env,
@@ -184,7 +186,7 @@ def main(
         agent.replay_buffer.extend(returned_object[1])
         if (
             agent.save_output
-            and (reward >= 499 or (env == "lunar" and reward >= 0))
+            and (reward >= 499 or ("lunar" in env_name.lower() and reward >= 0))
             and episode % 500 != 0  # saved below
         ):
             agent.save(models_path / f"{episode}th")

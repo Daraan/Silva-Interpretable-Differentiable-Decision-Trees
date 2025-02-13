@@ -39,7 +39,7 @@ from ray_utilities.postprocessing import (
 if TYPE_CHECKING:
     from ray.rllib.algorithms.ppo.ppo import PPO
 
-    from interpretable_ddts.runfiles.ddt_setup import DDTArgumentParser
+    from interpretable_ddts.ddt_setup import DDTArgumentParser
     from ray_utilities.config.experiment_base import NamespaceType
     from ray_utilities.typing import LogMetricsDict, StrictAlgorithmReturnData, TrainableReturnData
 
