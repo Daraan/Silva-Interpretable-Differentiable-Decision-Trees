@@ -23,10 +23,10 @@ from ray.tune import logger as tune_logger
 from interpretable_ddts.agents.ddt_catalog import DDTCatalog
 from interpretable_ddts.agents.ddt_ppo_module import DDTModule, ModelConfigDict
 from interpretable_ddts.agents.ppo_learner import SilvaLearner
-from interpretable_ddts.runfiles._pbar_updates import update_pbar
 from ray_utilities import is_pbar
 from ray_utilities.callbacks.algorithm.discrete_eval_callback import DiscreteEvalCallback
 from ray_utilities.callbacks.algorithm.env_render_callback import make_render_callback
+from ray_utilities.callbacks.progress_bar import update_pbar
 from ray_utilities.constants import EVALUATED_THIS_STEP
 from ray_utilities.postprocessing import (
     create_log_metrics,

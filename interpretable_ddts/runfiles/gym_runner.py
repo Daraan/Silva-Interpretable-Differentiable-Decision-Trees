@@ -28,10 +28,10 @@ from typing_extensions import Literal
 
 from interpretable_ddts.agents.ddt_agent import DDTAgent
 from interpretable_ddts.agents.mlp_agent import MLPAgent
-from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
-from interpretable_ddts.runfiles._pbar_updates import update_pbar
 from interpretable_ddts.ddt_setup import DDTArgumentParser
+from interpretable_ddts.opt_helpers.replay_buffer import discount_reward
 from ray_utilities import seed_everything
+from ray_utilities.callbacks.progress_bar import update_pbar
 from ray_utilities.constants import (
     ENV_RUNNER_RESULTS,
     EPISODE_RETURN_MEAN,
@@ -40,7 +40,6 @@ from ray_utilities.constants import (
 )
 
 if TYPE_CHECKING:
-    from ray_utilities.typing.trainable_return import TrainableReturnData
     from multiprocessing.synchronize import Lock
 
     from gymnasium.core import ActType, ObsType
@@ -49,6 +48,7 @@ if TYPE_CHECKING:
     )
 
     from interpretable_ddts.agents._agent_interface import AgentBase
+    from ray_utilities.typing.trainable_return import TrainableReturnData
 
 
 class LegacyDefaultArgumentParser(DDTArgumentParser):
