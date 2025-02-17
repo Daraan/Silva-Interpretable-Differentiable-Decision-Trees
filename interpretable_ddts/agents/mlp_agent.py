@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 from typing import Optional, Union, cast
+from typing_extensions import Self
 
 import torch
 from torch import nn
@@ -186,15 +187,19 @@ class MLPAgent(AgentBase):
                 + "\n",
             )
 
-    def duplicate(self):
-        new_agent = MLPAgent(
-            bot_name=self.bot_name.rstrip("_"),
-            input_dim=self.input_dim,
-            output_dim=self.output_dim,
-            num_hidden=self.num_hidden,
-            version=self.version,
-            save_output=self.save_output,
+    @classmethod
+    def duplicate_agent(cls, agent: Self) -> Self:
+        new_agent = cls(
+            bot_name=agent.bot_name.rstrip("_"),
+            input_dim=agent.input_dim,
+            output_dim=agent.output_dim,
+            num_hidden=agent.num_hidden,
+            version=agent.version,
+            save_output=agent.save_output,
             _duplicate=True,
         )
-        new_agent.__setstate__(self.__getstate__())
+        new_agent.__setstate__(agent.__getstate__())
         return new_agent
+
+    def duplicate(self) -> Self:
+        return self.duplicate_agent(self)

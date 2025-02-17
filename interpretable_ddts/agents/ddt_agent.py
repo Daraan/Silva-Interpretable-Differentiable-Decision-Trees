@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import TYPE_CHECKING, Optional, Union
+from typing_extensions import Self
 
 import numpy as np
 import torch
@@ -235,7 +236,7 @@ class DDTAgent(AgentBase):
             msg = f"No such file or directory:' {act_fn}'"
             raise FileNotFoundError(msg)
 
-    def __getstate__X(self):
+    def __getstate__(self):
         return {
             "action_network": self.action_network,
             "value_network": self.value_network,
@@ -247,7 +248,7 @@ class DDTAgent(AgentBase):
             "num_rules": self.num_rules,
         }
 
-    def __setstate__X(self, state):
+    def __setstate__(self, state):
         for key in state:
             setattr(self, key, state[key])
 
@@ -269,22 +270,26 @@ class DDTAgent(AgentBase):
                 + "\n"
             )
 
-    def duplicate(self, *, discrete=False):
-        new_agent = self.__class__(
-            bot_name=self.bot_name.rstrip("_"),
-            input_dim=self.input_dim,
-            output_dim=self.output_dim,
-            rule_list=self.rule_list,
-            num_rules=self.num_rules,
-            version=self.version,
-            save_output=self.save_output,
+    @classmethod
+    def duplicate_agent(cls, agent: Self, *, discrete=False):
+        new_agent = cls(
+            bot_name=agent.bot_name.rstrip("_"),
+            input_dim=agent.input_dim,
+            output_dim=agent.output_dim,
+            rule_list=agent.rule_list,
+            num_rules=agent.num_rules,
+            version=agent.version,
+            save_output=agent.save_output,
             _duplicate=True,
             use_gpu=False,  # <-----
         )
         # NOTE: networks are still shared!
-        new_agent.__setstate__X(self.__getstate__X())
+        new_agent.__setstate__(agent.__getstate__())
         if not discrete:
             return new_agent
         new_agent.action_network = new_agent.action_network.create_discrete_copy()
         new_agent.value_network = new_agent.value_network.create_discrete_copy()
         return new_agent
+
+    def duplicate(self, *, discrete=False):
+        return self.duplicate_agent(self, discrete=discrete)

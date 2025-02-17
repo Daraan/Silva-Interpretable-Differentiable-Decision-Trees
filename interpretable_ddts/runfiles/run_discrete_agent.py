@@ -83,7 +83,7 @@ def load_agent(fn: str | Path, bot_name="crispytester"):
     return policy_agent
 
 
-def search_for_good_model(env, n_jobs=5, verbose=1):
+def search_for_good_model(env, n_jobs=5, verbose: int | Literal["auto"] = 1):
     # Be sure to comment out gym_runner.gym_episode env.render
     max_reward = -float("inf")
     max_std = -float("inf")
@@ -246,7 +246,7 @@ def evaluate_model(
         seed_everything(env=None, seed=seed, torch_manual=True)  # needed here to be reproducible
 
     policy_agent = load_agent(fn, bot_name="crispytester")
-    policy_agent.value_network = policy_agent.action_network  # XXX: Original setup; wrong; unused?
+    policy_agent.value_network = policy_agent.action_network  # XXX: Original setup; wrong; value_network unused?
 
     master_states = []
     master_actions = []
@@ -391,7 +391,7 @@ def test_model(
     if match:
         header: dict[str, str] = match.groupdict()
         version = header.get("version", 99)
-        version = int(version) if version is not None else 99
+        version = int(version) if version is not None else 99  # pyright: ignore[reportUnnecessaryComparison]
         index = (
             header["env"],
             header["method"],
@@ -401,6 +401,8 @@ def test_model(
             version,
             int(header["episode"]),
         )
+        if any(v is None for v in index):  # pyright: ignore[reportUnnecessaryComparison]
+            print("WARNING: Some index values are None")
     else:
         index = None
         raise ValueError(f"{filename} does not match pattern")

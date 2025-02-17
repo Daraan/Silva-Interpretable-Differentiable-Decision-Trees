@@ -8,7 +8,7 @@ from typing import Any, Callable, ClassVar
 
 from ray.rllib.algorithms.ppo.ppo import PPOConfig
 
-from interpretable_ddts.runfiles._ddt_trainable import (
+from interpretable_ddts.rllib_port.ddt_trainable import (
     build_and_train,
     create_ddt_config,
 )

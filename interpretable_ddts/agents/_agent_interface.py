@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from functools import wraps
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, SupportsFloat
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
     from interpretable_ddts.opt_helpers import ppo_update, replay_buffer
 
 
-class AgentBase:
+class AgentBase(ABC):
     bot_name: str
     _duplicate: bool
 
@@ -96,10 +97,11 @@ class AgentBase:
     def save_reward(self, reward: float | SupportsFloat):
         raise NotImplementedError
 
+    @abstractmethod
     def save(self, path: Path | str): ...
 
     def get_action(self, observation, max_inputs: int = 10):
-        is_discrete = hasattr(self, "is_discrete") and self.is_discrete
+        is_discrete: bool = hasattr(self, "is_discrete") and self.is_discrete  # type: ignore[attr-defined]
         with torch.no_grad():
             obs = torch.Tensor(observation)
             obs = obs.view(1, -1)
@@ -150,5 +152,9 @@ class AgentBase:
     def reset(self):
         self.replay_buffer.clear()
 
-    def duplicate(self) -> Self:
-        raise NotImplementedError
+    @abstractmethod
+    def duplicate(self) -> Self: ...
+
+    @classmethod
+    @abstractmethod
+    def duplicate_agent(cls, agent: Self) -> Self: ...

@@ -203,7 +203,7 @@ class DDT(nn.Module):
         labels.requires_grad = True
         self.action_probs = nn.Parameter(labels)
 
-    def forward(self, input_data: torch.Tensor | dict[str, torch.Tensor], embedding_list=None):
+    def forward(self, input_data: torch.Tensor | dict[str, torch.Tensor]) -> torch.Tensor:
         if isinstance(input_data, dict):
             input_data = input_data["obs"]  # rllib input
 
