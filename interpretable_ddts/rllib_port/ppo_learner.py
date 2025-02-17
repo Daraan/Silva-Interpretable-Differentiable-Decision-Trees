@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from ray.rllib.utils.typing import ModuleID
 
     # rays typing is invalid, remove tf.Tensor for indexing
-    TensorType: TypeAlias = Union[NDArray, "jnp.ndarray", "torch.Tensor"]
+    TensorType: TypeAlias = Union[NDArray, jnp.ndarray, torch.Tensor]
 
 
 class SilvaLearner(PPOTorchLearner):

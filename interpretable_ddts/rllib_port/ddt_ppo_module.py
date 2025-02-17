@@ -12,7 +12,7 @@ from ray.rllib.core.models.base import ACTOR, CRITIC, ENCODER_OUT
 from ray.rllib.core.rl_module.rl_module import RLModuleConfig
 from ray.rllib.utils.deprecation import DEPRECATED_VALUE
 from ray.rllib.utils.deprecation import logger as _deprecation_logger
-from typing_extensions import NotRequired
+from typing_extensions import NotRequired, Self
 
 from interpretable_ddts.agents._agent_interface import AgentBase
 from interpretable_ddts.agents.ddt import DDT
@@ -20,12 +20,11 @@ from interpretable_ddts.opt_helpers import ppo_update
 from interpretable_ddts.opt_helpers.replay_buffer import (
     ReplayBufferSingleAgent as SilvaReplayBuffer,
 )
-
-from ray_utilities.typing.discrete_module import DiscreteModule
 from ray_utilities.constants import (
     DISC_EVAL_METRIC_RETURN_MEAN,
     EVAL_METRIC_RETURN_MEAN,
 )
+from ray_utilities.typing.discrete_module import DiscreteModule
 
 # This suppresses a deprecation warning from RLModuleConfig
 __old_level = _deprecation_logger.getEffectiveLevel()
@@ -38,6 +37,8 @@ if TYPE_CHECKING:
     import gymnasium as gym
 
     from interpretable_ddts.agents.ddt import LeafInfo
+
+logger = logging.getLogger(__name__)
 
 
 def init_rule_list(num_rules, dim_in, dim_out):
@@ -126,7 +127,7 @@ class DDTModule(DiscreteModule, PPOTorchRLModule):
             init_leaves = num_rules
 
         # Use is_value=True to NOT apply the softmax and return logits
-        self.__action_network = DDT(
+        self.pi = DDT(
             input_dim=input_dim,
             output_dim=output_dim,
             weights=init_weights,
@@ -138,7 +139,7 @@ class DDTModule(DiscreteModule, PPOTorchRLModule):
             is_value=not self.model_config.get("action_use_softmax", False),
             use_gpu=self.model_config["use_gpu"],
         )
-        self.__value_network = DDT(
+        self.vf = DDT(
             input_dim=input_dim,
             output_dim=1 if not self.model_config["vf_double_output"] else 2,
             weights=init_weights,
@@ -148,8 +149,6 @@ class DDTModule(DiscreteModule, PPOTorchRLModule):
             is_value=True,
             use_gpu=self.model_config["use_gpu"],
         )
-        self.vf = self.__value_network
-        self.pi = self.__action_network
 
         self.is_discrete = False
         self._max_inputs = 10
@@ -183,14 +182,14 @@ class DDTModule(DiscreteModule, PPOTorchRLModule):
 
     def switch_mode(self, *, discrete: bool):
         if discrete and not self.is_discrete:
-            self.pi = self.__action_network.create_discrete_copy()
-            self.vf = self.__value_network.create_discrete_copy()
+            self.pi = self.pi.create_discrete_copy()
+            self.vf = self.vf.create_discrete_copy()
             self.pi.eval()
             self.vf.eval()
             self.is_discrete = True
         elif not discrete and self.is_discrete:
-            self.pi = self.__action_network
-            self.vf = self.__value_network
+            self.pi = self.pi
+            self.vf = self.vf
             self.is_discrete = False
 
 
@@ -242,7 +241,8 @@ class LegacyDDTModule(DDTModule, AgentBase):
     def save(self, path):
         pass
 
-    def duplicate(self, *, discrete=False):
+    @classmethod
+    def duplicate_agent(cls, agent: Self, *, discrete: bool = False) -> Self:
         """
         Creates a **shallow** duplicate of the agent with identical(!) networks, however
         with a new replay buffer.
@@ -252,32 +252,35 @@ class LegacyDDTModule(DDTModule, AgentBase):
         """
         # from copy import deepcopy
         # new_agent = deepcopy(self)
-        new_agent = self.__class__(
-            observation_space=self.observation_space,
-            action_space=self.action_space,
-            inference_only=self.inference_only,  # could possibly set this to False, value missing then?
+        new_agent = cls(
+            observation_space=agent.observation_space,
+            action_space=agent.action_space,
+            inference_only=agent.inference_only,  # could possibly set this to False, value missing then?
             learner_only=False,
-            model_config=self.model_config,
-            catalog_class=self.catalog.__class__,
+            model_config=agent.model_config,
+            catalog_class=agent.catalog.__class__,
         )
         new_agent.setup(duplicate=True)  # this creates pi, vf and ppo; adjust afterwards!
         # NOTE: Networks are shared!
         if discrete:
-            new_agent.pi = self.pi.create_discrete_copy()
+            new_agent.pi = agent.pi.create_discrete_copy()
             new_agent.vf = (
-                self.vf.create_discrete_copy()
+                agent.vf.create_discrete_copy()
             )  # TODO: this should be based on pi!; check if really necessary
             new_agent.ppo = ppo_update.PPO([new_agent.pi, new_agent.vf], two_nets=True, use_gpu=False)
             new_agent.is_discrete = True
         else:
-            new_agent.pi = self.pi
-            new_agent.vf = self.vf
-            new_agent.ppo = self.ppo
+            new_agent.pi = agent.pi
+            new_agent.vf = agent.vf
+            new_agent.ppo = agent.ppo
         return new_agent
+
+    def duplicate(self, *, discrete=False):
+        return self.duplicate_agent(self, discrete=discrete)
 
     def end_episode(self, reward, *, discrete_reward: Optional[float] = None):
         if self._duplicate:
-            logging.warning("Calling end_episode on a duplicate agent")
+            logger.warning("Calling end_episode on a duplicate agent")
         loss = AgentBase.end_episode(self, reward)
         # This should only be used in gym_runner which does not use ray train; only one report per episode
         metrics = {

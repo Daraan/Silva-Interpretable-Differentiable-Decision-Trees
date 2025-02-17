@@ -59,7 +59,7 @@ def create_ddt_config(
     """
     if not isinstance(args, dict):
         if hasattr(args, "as_dict"):  # Tap
-            args = cast(dict[str, Any], args.as_dict())
+            args = cast("dict[str, Any]", args.as_dict())
         else:
             args = vars(args).copy()
     if not env_type and not args["env_type"]:
@@ -174,7 +174,7 @@ def create_ddt_config(
         module_class=DDTModule,
         observation_space=init_env.observation_space,
         action_space=init_env.action_space,
-        model_config=cast(dict[str, Any], model_config),
+        model_config=cast("dict[str, Any]", model_config),
         catalog_class=DDTCatalog,
     )
     # module = module_spec.build()
@@ -228,7 +228,7 @@ def create_ddt_config(
         == config.learner_config_dict["use_silva_loss"]
     )
     if args["legacy"]:
-        from interpretable_ddts.rllib_port.ddt_ppo_module import LegacyDDTModule
+        from interpretable_ddts.rllib_port.ddt_ppo_module import LegacyDDTModule  # noqa: PLC0415
 
         module_spec.module_class = LegacyDDTModule
         model_config: ModelConfigDict = module_spec.model_config  # type: ignore[assignment]

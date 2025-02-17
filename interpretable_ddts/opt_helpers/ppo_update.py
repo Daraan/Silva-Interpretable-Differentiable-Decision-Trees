@@ -58,7 +58,7 @@ class PPO:
                 total_value_loss = total_value_loss.cuda()
 
             samples = [rollouts.sample() for _ in range(batch_size)]
-            samples = cast(list[dict[str, Any]], [sample for sample in samples if sample is not False])
+            samples = cast("list[dict[str, Any]]", [sample for sample in samples if sample is not False])
             if len(samples) <= 0:
                 continue
             state = torch.cat([sample["state"][0] for sample in samples], dim=0)

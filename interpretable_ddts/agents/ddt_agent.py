@@ -1,7 +1,6 @@
 # Created by Andrew Silva on 8/28/19
 from __future__ import annotations
 
-import logging
 import os
 from typing import TYPE_CHECKING, Optional, Union
 from typing_extensions import Self
@@ -69,7 +68,9 @@ def load_ddt(fn):
         with safe_globals():
             model_checkpoint = torch.load(fn, map_location="cpu", weights_only=True)
     except RuntimeError:
-        logging.error("Exception with file %s", fn)
+        import logging  # noqa
+
+        logging.error("Exception with file %s", fn)  # noqa
         raise
     model_data = model_checkpoint["model_data"]
     init_weights = np.array([weight.detach().clone().data.cpu().numpy() for weight in model_data["weights"]])

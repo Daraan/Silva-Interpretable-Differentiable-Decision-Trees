@@ -98,7 +98,7 @@ class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
             raise ValueError("Must specify --num_hidden with MLP")
         if not args.test and not args.comet:
             logger.warning("Not in test mode and comet disabled. Will not log to Comet")
-            import time
+            import time  # noqa: PLC0415
 
             time.sleep(4)  # give user time to cancel
 
@@ -121,9 +121,9 @@ class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
     def create_trainable(self) -> Callable[[dict[str, Any]], TrainableReturnData]:
         if self.args.legacy:
             # Do not use an algorithm but the gym_runner.py code
-            from ray.experimental import tqdm_ray
+            from ray.experimental import tqdm_ray  # noqa: PLC0415
 
-            from interpretable_ddts.runfiles import gym_runner
+            from interpretable_ddts.runfiles import gym_runner  # noqa: PLC0415
 
             module_spec = self.config.get_rl_module_spec()
             trainable = partial(

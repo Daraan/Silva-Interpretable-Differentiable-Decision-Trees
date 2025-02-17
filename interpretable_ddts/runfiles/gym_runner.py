@@ -19,8 +19,6 @@ from typing import (
 import gymnasium as gym
 import numpy as np
 import torch.multiprocessing as mp
-from gymnasium.envs.box2d.lunar_lander import LunarLander
-from gymnasium.envs.classic_control.cartpole import CartPoleEnv
 from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo  # pyright: ignore[reportPrivateImportUsage]
 from joblib import Parallel, delayed
 from tqdm import tqdm
@@ -40,6 +38,8 @@ from ray_utilities.constants import (
 )
 
 if TYPE_CHECKING:
+    from gymnasium.envs.classic_control.cartpole import CartPoleEnv
+    from gymnasium.envs.box2d.lunar_lander import LunarLander
     from multiprocessing.synchronize import Lock
 
     from gymnasium.core import ActType, ObsType
@@ -241,10 +241,10 @@ def main(
 
 
 def create_rlib_agent(args, init_env: gym.Env):
-    from ray.rllib.core.rl_module.rl_module import RLModuleSpec  # noqa: F811
+    from ray.rllib.core.rl_module.rl_module import RLModuleSpec  # noqa: F811,PLC0415
 
-    from interpretable_ddts.rllib_port.ddt_catalog import DDTCatalog  # noqa: F811
-    from interpretable_ddts.rllib_port.ddt_ppo_module import LegacyDDTModule  # noqa: F811
+    from interpretable_ddts.rllib_port.ddt_catalog import DDTCatalog  # noqa: F811,PLC0415
+    from interpretable_ddts.rllib_port.ddt_ppo_module import LegacyDDTModule  # noqa: F811,PLC0415
 
     module_spec = RLModuleSpec(
         module_class=LegacyDDTModule,
@@ -263,7 +263,7 @@ def create_rlib_agent(args, init_env: gym.Env):
         },
         catalog_class=DDTCatalog,
     )
-    policy_agent: LegacyDDTModule = cast(LegacyDDTModule, module_spec.build())
+    policy_agent: LegacyDDTModule = cast("LegacyDDTModule", module_spec.build())
     policy_agent.setup()
     return policy_agent
 
@@ -374,7 +374,7 @@ def start_process(
         results_legacy: dict[str, Any] = {
             "running_reward_mean": np.mean(reward_array[-100:]).item(),
             "num_episodes": len(reward_array),
-            "perfect_episodes": sum([1 for r in reward_array if r >= 499]),
+            "perfect_episodes": sum(1 for r in reward_array if r >= 499),
         }
         results = results_legacy
     else:
@@ -424,12 +424,12 @@ if __name__ == "__main__":
 
     init_env: gym.Env
     if ENV_TYPE == "lunar":
-        init_env = cast(LunarLander, gym.make("LunarLander-v2", render_mode=args.render_mode))
+        init_env = cast("LunarLander", gym.make("LunarLander-v2", render_mode=args.render_mode))
         dim_in = init_env.observation_space.shape[0]  # type: ignore
         dim_out = init_env.action_space.n  # type: ignore[attr-defined]
         env = "LunarLander-v2"
     elif ENV_TYPE == "cart":
-        init_env = cast(CartPoleEnv, gym.make("CartPole-v1", render_mode=args.render_mode))
+        init_env = cast("CartPoleEnv", gym.make("CartPole-v1", render_mode=args.render_mode))
         dim_in = init_env.observation_space.shape[0]  # type: ignore
         dim_out = init_env.action_space.n  # type: ignore[attr-defined]
         env = "CartPole-v1"

@@ -6,6 +6,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
+import sys
 from typing import Optional, Sequence, TypedDict, cast, overload
 
 import gymnasium as gym
@@ -19,7 +20,6 @@ from typing_extensions import Literal, NotRequired
 
 from interpretable_ddts.agents.ddt import DDT
 from interpretable_ddts.agents.ddt_agent import DDTAgent
-from interpretable_ddts.opt_helpers.discretization import convert_to_discrete
 from interpretable_ddts.opt_helpers.sklearn_to_ddt import ddt_init_from_dt
 from ray_utilities import seed_everything
 
@@ -101,14 +101,13 @@ def search_for_good_model(env, n_jobs=5, verbose: int | Literal["auto"] = 1):
     total = len(files)
     if total == 0:
         print("No results found in", model_path, "subdirs excluded. Exiting...")
-        import sys
 
         sys.exit(1)
     if verbose:
         print(f"Found {total} models")
-    _max_models_for_verbose = 50
-    if total >= _max_models_for_verbose and verbose == "auto":
-        print(f"Turning off full verbose output for more than {_max_models_for_verbose} models")
+    max_models_for_verbose = 50
+    if total >= max_models_for_verbose and verbose == "auto":
+        print(f"Turning off full verbose output for more than {max_models_for_verbose} models")
         verbose = False
     elif verbose == "auto":
         verbose = True
@@ -274,7 +273,7 @@ def evaluate_model(
     if run_discrete:
         master_states = torch.cat([state[0] for state in master_states], dim=0)
         if not classic_decision_tree:
-            crispy_actor = convert_to_discrete(policy_agent.action_network)  # Discretize DDT
+            crispy_actor = policy_agent.action_network.create_discrete_copy()  # Discretize DDT
         else:
             ###### test with a DT #######
             x_train = [state.cpu().numpy().reshape(-1) for state in master_states]
@@ -537,7 +536,7 @@ if __name__ == "__main__":
             models = results_df.fn.to_numpy()
         else:  # only best
             models = best_disc_models.values()
-        models = cast(Sequence[str], models)
+        models = cast("Sequence[str]", models)
         # cartpole random seeds include: [11421, 12494, 12495, 12496,
         # 30867, 30868, 30869, 30870, 30871, 30872, 34662, 38979, 38980, 45603, 45604, 45605, 45606, 46760, 46761,
         # 50266, 50267, 54857, 65926, 70614, 79986, 79987, 79988, 79989]
@@ -550,7 +549,7 @@ if __name__ == "__main__":
             ]
             results = Parallel(n_jobs=25)(eval_functions)
             # Assume Parallel return_as="list"
-            results = cast(list[tuple[tuple[str, str, str, int, bool, int, int], ResultDict]], results)
+            results = cast("list[tuple[tuple[str, str, str, int, bool, int, int], ResultDict]]", results)
             print("\n")
         else:
             results = [test_model(discrete_fn, seed=SEED) for discrete_fn in models]

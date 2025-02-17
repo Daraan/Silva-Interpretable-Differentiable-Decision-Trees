@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Optional, Sequence, cast
+from typing_extensions import Self
 
 import numpy as np
 import torch
@@ -258,9 +259,51 @@ class DDT(nn.Module):
         # Else return probabilities
         return self.softmax(actions)
 
-    def create_discrete_copy(self, *, preserve_actions: bool = True) -> "DDT":
-        from interpretable_ddts.opt_helpers.discretization import (
-            convert_to_discrete,  # lazy load circular.
+    def create_discrete_copy(self, *, preserve_actions: bool = True) -> Self:
+        fuzzy_model = self
+        new_weights = []
+        new_comps = []
+
+        weights = np.abs(fuzzy_model.layers.detach().numpy())
+        most_used = np.argmax(weights, axis=1)
+        for comp_ind, comparator_tensor in enumerate(fuzzy_model.comparators):
+            comparator = comparator_tensor.item()
+            divisor = abs(fuzzy_model.layers[comp_ind][most_used[comp_ind]].item())
+            if divisor == 0:
+                divisor = 1
+            comparator /= divisor
+            new_comps.append([comparator])
+            max_ind = most_used[comp_ind]
+            new_weight = np.zeros(len(fuzzy_model.layers[comp_ind].data))
+            new_weight[max_ind] = fuzzy_model.layers[comp_ind][most_used[comp_ind]].item() / divisor
+            new_weights.append(new_weight)
+
+        new_input_dim = fuzzy_model.input_dim
+        new_weights = np.array(new_weights)
+        new_comps = np.array(new_comps)
+        crispy_model = fuzzy_model.__class__(
+            input_dim=new_input_dim,
+            output_dim=fuzzy_model.output_dim,
+            weights=new_weights,
+            comparators=new_comps,
+            leaves=fuzzy_model.leaf_init_information,
+            alpha=99999.0,
+            is_value=fuzzy_model.is_value,
+            use_gpu=fuzzy_model.use_gpu,
         )
 
-        return convert_to_discrete(self, preserve_actions=preserve_actions)
+        # XXX: Are both needed should this be a hyperparameter?
+        # For a ddt that preserves actions using softmaxes, use old action probs
+        if preserve_actions:
+            crispy_model.action_probs.data = fuzzy_model.action_probs.data
+        else:
+            # For a set of discrete ddt parameters (0, 1) leaves, use the one-hot method:
+            max_inds = fuzzy_model.action_probs.data.argmax(dim=1)
+            new_action_probs = torch.zeros_like(fuzzy_model.action_probs.data)
+            new_action_probs[np.arange(len(new_action_probs)), max_inds] = 10
+            crispy_model.action_probs.data = new_action_probs
+
+        if fuzzy_model.use_gpu:
+            crispy_model = crispy_model.cuda()
+
+        return crispy_model
