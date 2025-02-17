@@ -1,6 +1,6 @@
 from __future__ import annotations
-
 # pyright: enableExperimentalFeatures=true
+
 import logging
 import tempfile
 from typing import TYPE_CHECKING, Any, Final, Optional, TypeVar, cast
@@ -20,9 +20,9 @@ from ray.rllib.utils.metrics import (
 )
 from ray.tune import logger as tune_logger
 
-from interpretable_ddts.agents.ddt_catalog import DDTCatalog
-from interpretable_ddts.agents.ddt_ppo_module import DDTModule, ModelConfigDict
-from interpretable_ddts.agents.ppo_learner import SilvaLearner
+from interpretable_ddts.rllib_port.ddt_catalog import DDTCatalog
+from interpretable_ddts.rllib_port.ddt_ppo_module import DDTModule, ModelConfigDict
+from interpretable_ddts.rllib_port.ppo_learner import SilvaLearner
 from ray_utilities import is_pbar
 from ray_utilities.callbacks.algorithm.discrete_eval_callback import DiscreteEvalCallback
 from ray_utilities.callbacks.algorithm.env_render_callback import make_render_callback
@@ -228,7 +228,7 @@ def create_ddt_config(
         == config.learner_config_dict["use_silva_loss"]
     )
     if args["legacy"]:
-        from interpretable_ddts.agents.ddt_ppo_module import LegacyDDTModule
+        from interpretable_ddts.rllib_port.ddt_ppo_module import LegacyDDTModule
 
         module_spec.module_class = LegacyDDTModule
         model_config: ModelConfigDict = module_spec.model_config  # type: ignore[assignment]

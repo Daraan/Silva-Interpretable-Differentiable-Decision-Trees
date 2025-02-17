@@ -16,7 +16,7 @@ def test_mode_func(trainable: FunctionalTrainable, setup: DDTSetup):
         # this is a partial of gym_runner.run_process with param_space already set to the second argument
         return trainable({})
     # Trainable is build_and_train but not with disabled report
-    from interpretable_ddts.runfiles._ddt_trainable import build_and_train
+    from interpretable_ddts.rllib_port import build_and_train
 
     return build_and_train(setup.param_space, disable_report=True)
 

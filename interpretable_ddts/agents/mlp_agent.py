@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, cast
 
 import torch
 from torch import nn
@@ -85,7 +85,7 @@ class MLPAgent(AgentBase):
         self.reward_history = []
         self.num_steps = 0
 
-    def get_action(self, observation, max_inputs=30):
+    def get_action(self, observation, max_inputs=30) -> int:
         with torch.no_grad():
             obs = torch.Tensor(observation)
             obs = obs.view(1, -1)
@@ -96,28 +96,28 @@ class MLPAgent(AgentBase):
             probs = probs.view(-1)
             self.full_probs = probs
             if self.action_network.input_dim > max_inputs:
-                probs, inds = torch.topk(probs, 3)
+                probs, indices = torch.topk(probs, 3)
             m = Categorical(probs)
-            action = m.sample()
+            action = cast("torch.IntTensor", m.sample())
             log_probs = m.log_prob(action)
             self.last_action_probs = log_probs
             self.last_value_pred = value_pred.view(-1).cpu()
 
             if self.action_network.input_dim > max_inputs:
-                self.last_action = inds[action]
+                self.last_action = indices[action]  # pyright: ignore[reportPossiblyUnboundVariable, reportAttributeAccessIssue]
             else:
                 self.last_action = action
         if self.action_network.input_dim > max_inputs:
-            action = inds[action].item()
+            action = indices[action].item()  # pyright: ignore[reportPossiblyUnboundVariable]
         else:
             action = action.item()
-        return action
+        return action  # type: ignore[return-type]
 
     def save_reward(self, reward):
         self.replay_buffer.insert(
             obs=[self.last_state],
             action_log_probs=self.last_action_probs,
-            value_preds=self.last_value_pred[self.last_action.item()],
+            value_preds=self.last_value_pred[self.last_action.item()],  # type: ignore[arg-type]
             last_action=self.last_action.item(),
             full_probs_vector=self.full_probs,
             rewards=reward,

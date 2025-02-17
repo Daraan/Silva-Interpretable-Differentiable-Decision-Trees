@@ -114,7 +114,7 @@ def main(
     agent: Union[DDTAgent, MLPAgent, AgentBase],
     env: str | gym.Env,
     *,
-    seed=None,
+    seed: Optional[int] = None,
     pbar: bool | Iterable[int] = True,
     render_mode=None,
 ):
@@ -243,8 +243,8 @@ def main(
 def create_rlib_agent(args, init_env: gym.Env):
     from ray.rllib.core.rl_module.rl_module import RLModuleSpec  # noqa: F811
 
-    from interpretable_ddts.agents.ddt_catalog import DDTCatalog  # noqa: F811
-    from interpretable_ddts.agents.ddt_ppo_module import LegacyDDTModule  # noqa: F811
+    from interpretable_ddts.rllib_port.ddt_catalog import DDTCatalog  # noqa: F811
+    from interpretable_ddts.rllib_port.ddt_ppo_module import LegacyDDTModule  # noqa: F811
 
     module_spec = RLModuleSpec(
         module_class=LegacyDDTModule,
