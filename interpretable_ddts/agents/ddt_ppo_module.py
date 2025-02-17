@@ -21,6 +21,7 @@ from interpretable_ddts.opt_helpers.replay_buffer import (
     ReplayBufferSingleAgent as SilvaReplayBuffer,
 )
 
+from ray_utilities.typing.discrete_module import DiscreteModule
 from ray_utilities.constants import (
     DISC_EVAL_METRIC_RETURN_MEAN,
     EVAL_METRIC_RETURN_MEAN,
@@ -62,7 +63,7 @@ class ModelConfigDict(TypedDict):
     vf_double_output: bool
 
 
-class DDTModule(PPOTorchRLModule):
+class DDTModule(DiscreteModule, PPOTorchRLModule):
     observation_space: gym.Space
     action_space: gym.Space
     config: RLModuleConfig
@@ -114,8 +115,6 @@ class DDTModule(PPOTorchRLModule):
         input_dim = self.observation_space.shape[0]  # type: ignore
         output_dim = int(self.action_space.n)  # type: ignore
         if rule_list:
-            if self.bot_name and (str(num_rules) + "_rules" not in self.bot_name):
-                self.bot_name += str(num_rules) + "_rules"
             init_weights, init_comparators, init_leaves = init_rule_list(
                 num_rules,
                 input_dim,
@@ -125,8 +124,6 @@ class DDTModule(PPOTorchRLModule):
             init_weights = None
             init_comparators = None
             init_leaves = num_rules
-            if self.bot_name and (str(num_rules) + "_leaves" not in self.bot_name):
-                self.bot_name += str(num_rules) + "_leaves"
 
         # Use is_value=True to NOT apply the softmax and return logits
         self.__action_network = DDT(
@@ -156,6 +153,20 @@ class DDTModule(PPOTorchRLModule):
 
         self.is_discrete = False
         self._max_inputs = 10
+        self._setup_name()
+
+    def _setup_name(self):
+        assert isinstance(self.model_config, dict)
+
+        if "bot_name" not in self.model_config:
+            return
+        self.bot_name = self.model_config["bot_name"] + "_"
+        num_rules: int = self.model_config["num_rules"]
+        rule_list: bool = self.model_config["rule_list"]
+        if rule_list and (str(num_rules) + "_rules" not in self.bot_name):
+            self.bot_name += str(num_rules) + "_rules"
+        elif not rule_list and (str(num_rules) + "_leaves" not in self.bot_name):
+            self.bot_name += str(num_rules) + "_leaves"
 
     def encoder(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -212,6 +223,8 @@ class LegacyDDTModule(DDTModule, AgentBase):
 
     def setup(self, *, duplicate=False) -> None:
         super().setup()
+        assert self.bot_name
+
         self.rewards_file = None
         self._version = None
         self._duplicate = duplicate
@@ -277,3 +290,8 @@ class LegacyDDTModule(DDTModule, AgentBase):
             checkpoint=None,
         )
         return loss
+
+
+if TYPE_CHECKING:  # Create ABC errors
+    DDTModule()
+    LegacyDDTModule()

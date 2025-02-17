@@ -154,6 +154,7 @@ class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
         # Wrap decorator for checking
         trainable = verify_return(TrainableReturnData)(trainable)
         trainable = wraps_wrapper(trainable)
+        # trainable._progress_metrics = CLI_REPORTER_PARAMETER_COLUMNS  # type: ignore[attr-defined]
         return trainable
 
     # endregion

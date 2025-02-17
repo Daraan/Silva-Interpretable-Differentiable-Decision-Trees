@@ -3,7 +3,7 @@ from __future__ import annotations
 # pyright: enableExperimentalFeatures=true
 import logging
 import tempfile
-from typing import TYPE_CHECKING, Any, Optional, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Final, Optional, TypeVar, cast
 
 import gymnasium as gym
 import ray
@@ -25,9 +25,7 @@ from interpretable_ddts.agents.ddt_ppo_module import DDTModule, ModelConfigDict
 from interpretable_ddts.agents.ppo_learner import SilvaLearner
 from interpretable_ddts.runfiles._pbar_updates import update_pbar
 from ray_utilities import is_pbar
-from ray_utilities.callbacks.algorithm.discrete_eval_callback import (
-    DiscreteEvalCallback,
-)
+from ray_utilities.callbacks.algorithm.discrete_eval_callback import DiscreteEvalCallback
 from ray_utilities.callbacks.algorithm.env_render_callback import make_render_callback
 from ray_utilities.constants import EVALUATED_THIS_STEP
 from ray_utilities.postprocessing import (
@@ -50,7 +48,8 @@ _ConfigType = TypeVar("_ConfigType", bound=PPOConfig)
 
 def create_ddt_config(
     args: dict[str, Any] | NamespaceType[DDTArgumentParser],
-    env_type: Optional[str | type[gym.Env]] = None,
+    env_type: Optional[str | gym.Env] = None,
+    env_seed: Optional[int] = None,
     *,
     config_class: type[_ConfigType] = PPOConfig,
 ) -> tuple[_ConfigType, RLModuleSpec]:
@@ -65,14 +64,21 @@ def create_ddt_config(
             args = vars(args).copy()
     if not env_type and not args["env_type"]:
         raise ValueError("No environment specified")
-    env_type = env_type or args["env_type"]
-    assert env_type, "No environment specified"
+    env_spec: Final = env_type or args["env_type"]
+    del env_type
+    assert env_spec, "No environment specified"
     config = config_class()
+
+    env_config = {}
     if args["render_mode"]:
-        env_config = {"render_mode": args["render_mode"]}
-        config.environment(env_type, env_config=env_config)
+        env_config["render_mode"] = args["render_mode"]
+    if env_seed is not None:
+        env_config.update({"seed": env_seed, "env_type": env_spec})
+        config.environment("seeded_env", env_config=env_config)
+    elif env_config:
+        config.environment(env_spec, env_config=env_config)
     else:
-        config.environment(env_type)
+        config.environment(env_spec)
     config.api_stack(
         enable_rl_module_and_learner=True,
         enable_env_runner_and_connector_v2=True,
@@ -146,8 +152,13 @@ def create_ddt_config(
     )
     # Create a single agent RL module spec.
     # NOTE: This might needs adjustment when using VectorEnv
-    if isinstance(config.env, str):
+    if isinstance(config.env, str) and config.env != "seeded_env":
         init_env = gym.make(config.env)
+    elif config.env == "seeded_env":
+        if isinstance(env_spec, str):
+            init_env = gym.make(env_spec)
+        else:
+            init_env = env_spec
     else:
         assert not TYPE_CHECKING or config.env
         init_env = gym.make(config.env.unwrapped.spec.id)  # pyright: ignore[reportOptionalMemberAccess]
@@ -247,7 +258,7 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
     """
     args: dict = hparams["cli_args"]
     # TODO: this should use the parameters from the search space
-    config, _ = create_ddt_config(args)
+    config, _ = create_ddt_config(args, env_seed=hparams.get("env_seed"))
     algo = cast("PPO", config.build())
 
     if use_pbar:
