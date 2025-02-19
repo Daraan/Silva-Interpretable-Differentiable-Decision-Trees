@@ -21,7 +21,13 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import jax.numpy as jnp  # pyright: ignore[reportMissingImports]
     from numpy.typing import NDArray
-    from ray.rllib.algorithms.ppo.ppo_rl_module import PPORLModule
+
+    try:
+        from ray.rllib.algorithms.ppo.default_ppo_rl_module import DefaultPPORLModule
+    except ImportError:
+        # Old version
+        from ray.rllib.algorithms.ppo.ppo_rl_module import PPORLModule as DefaultPPORLModule  # pyright: ignore[reportPrivateImportUsage]
+
     from ray.rllib.utils.typing import ModuleID
 
     # rays typing is invalid, remove tf.Tensor for indexing
@@ -39,7 +45,7 @@ class SilvaLearner(PPOTorchLearner):
         fwd_out: Dict[str, TensorType],
     ) -> TensorType:
         # Note fwd_out["embeddings"] likely == batch
-        module: PPORLModule = self.module[module_id].unwrapped()  # pyright: ignore[reportAssignmentType]
+        module: DefaultPPORLModule = self.module[module_id].unwrapped()  # pyright: ignore[reportAssignmentType]
         use_silva_loss = self.config.learner_config_dict["use_silva_loss"]
 
         if Columns.LOSS_MASK in batch:

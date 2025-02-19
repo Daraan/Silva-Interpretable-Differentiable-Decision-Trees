@@ -1,4 +1,5 @@
 # %%
+from __future__ import annotations
 from pathlib import Path
 
 import matplotlib as mpl
@@ -8,6 +9,11 @@ import seaborn as sns
 
 from interpretable_ddts import tools
 from interpretable_ddts.tools import load_rewards
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
 
 sns.set_theme()
 
@@ -26,9 +32,11 @@ LUNAR_CSV = "outputs/results_lunar_recreation.csv"
 SC_CSV = None
 
 
-def scatter_fuzzy_discrete(df: pd.DataFrame, ax=None, *, max_reward=500, **kwargs):
+def scatter_fuzzy_discrete(df: pd.DataFrame, ax: Axes | None = None, *, max_reward=500, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
+    else:
+        fig = ax.get_figure()
     if "edgecolors" not in kwargs and mpl.__version__ < "3.7.":
         kwargs["edgecolors"] = "fill"
     sns.scatterplot(

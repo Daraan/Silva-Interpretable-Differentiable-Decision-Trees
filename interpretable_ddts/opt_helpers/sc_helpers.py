@@ -107,7 +107,7 @@ def get_player_state(state_in):
     return sorted_observed_player_state
 
 
-def get_unit_data(unit_in):
+def get_unit_data(unit_in) -> list[float]:
     if unit_in is None:
         return [-1, -1, -1, -1]
     extracted_data = [

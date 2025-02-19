@@ -74,7 +74,7 @@ ignore = [
   "RUF100",  # Unused noqa
   "SIM108",  # Use ternary assignments instead of if blocks
   "SIM300",  # Yoda triggers on GYM_VERSION >= Version("1.0.0")
-  "N806", "N812",  # Upercase variables
+  "N806", "N812",  # Uppercase variables
   "PLR09",  #  Too many
 
   "TRY003", "TRY400",  # To long error messages, use logging.exception over error
@@ -91,6 +91,8 @@ exclude = [
     "build",
     "dist",
     "sc[2_]*",  # ignore StarCraft files
+    "env",
+    "env10"
 ]
 
 [tool.ruff.format]
@@ -98,6 +100,8 @@ exclude = [
   exclude = [
     ".git",
     "sc[2_]*",  # ignore StarCraft files
+    "env",
+    "env10"
 ]
 
 [tool.ruff.lint.isort]
@@ -115,3 +119,15 @@ extraPaths = ["ray_utilities/"]
 reportDeprecated = "warning"
 reportUnnecessaryComparison = "warning"
 reportUnnecessaryCast = "warning"
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".tox",
+    ".venv",
+    "build",
+    "dist",
+    "**/sc2*", "**/sc_*",  # ignore StarCraft files
+    "env",
+    "env10",
+    "**/node_modules", "**/__pycache__", "**/.*"
+]

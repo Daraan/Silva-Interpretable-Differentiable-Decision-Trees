@@ -27,7 +27,7 @@ from ray_utilities import is_pbar
 from ray_utilities.callbacks.algorithm.discrete_eval_callback import DiscreteEvalCallback
 from ray_utilities.callbacks.algorithm.env_render_callback import make_render_callback
 from ray_utilities.callbacks.progress_bar import update_pbar
-from ray_utilities.constants import EVALUATED_THIS_STEP
+from ray_utilities.constants import EVALUATED_THIS_STEP, RAY_NEW_API_STACK_ENABLED
 from ray_utilities.postprocessing import (
     create_log_metrics,
     create_running_reward_updater,
@@ -79,10 +79,6 @@ def create_ddt_config(
         config.environment(env_spec, env_config=env_config)
     else:
         config.environment(env_spec)
-    config.api_stack(
-        enable_rl_module_and_learner=True,
-        enable_env_runner_and_connector_v2=True,
-    )
     config.resources(
         # num_gpus=1 if args["gpu"] else 0,4
         # process that runs Algorithm.training_step() during Tune
@@ -113,7 +109,7 @@ def create_ddt_config(
     config.learners(
         # for fractional GPUs, you should always set num_learners to 0 or 1
         num_learners=0 if args["parallel"] else 0,
-        num_cpus_per_learner=1,
+        num_cpus_per_learner=0 if args["test"] else 1,
         num_gpus_per_learner=1 if args["gpu"] else 0,
     )
 
@@ -221,6 +217,12 @@ def create_ddt_config(
         # Using these could be useful if no Tuner is used
         logger_config={"type": tune_logger.NoopLogger},
     )
+    if not RAY_NEW_API_STACK_ENABLED:
+        # by default enabled from ray 2.40.0; should be called after .exploration
+        config.api_stack(
+            enable_rl_module_and_learner=True,
+            enable_env_runner_and_connector_v2=True,
+        )
     # Checks
     config.validate_train_batch_size_vs_rollout_fragment_length()
     assert (
@@ -259,7 +261,11 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
     args: dict = hparams["cli_args"]
     # TODO: this should use the parameters from the search space
     config, _ = create_ddt_config(args, env_seed=hparams.get("env_seed"))
-    algo = cast("PPO", config.build())
+    try:
+        algo = cast("PPO", config.build_algo())  # pyright: ignore[reportAttributeAccessIssue]
+    except AttributeError:
+        # Older API
+        algo = cast("PPO", config.build())  # pyright: ignore[reportAttributeAccessIssue]
 
     if use_pbar:
         pbar = tqdm_ray.tqdm(range(args["episodes"]), position=hparams.get("process_number", None))
@@ -296,6 +302,7 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
             disc_running_eval_reward = running_disc_eval_reward_updater(disc_eval_mean)
 
         # Checkpoint
+        report_metrics = cast("dict[str, Any]", metrics)  # satisfy train.report
         if (
             not disable_report
             and (EVALUATION_RESULTS in result and result[EVALUATION_RESULTS].get(EVALUATED_THIS_STEP, False))
@@ -303,10 +310,10 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
         ):
             with tempfile.TemporaryDirectory() as tempdir:
                 algo.save_checkpoint(tempdir)
-                train.report(metrics=metrics, checkpoint=train.Checkpoint.from_directory(tempdir))
+                train.report(metrics=report_metrics, checkpoint=train.Checkpoint.from_directory(tempdir))
         # Report metrics
         elif not disable_report:
-            train.report(metrics, checkpoint=None)
+            train.report(report_metrics, checkpoint=None)
 
         # Update progress bar
         if not is_pbar(pbar):

@@ -96,8 +96,8 @@ class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
             raise ValueError("Do not use --num_hidden with DDT")
         if args.agent_type == "mlp" and args.num_hidden:  # type: ignore[comparison-overlap]
             raise ValueError("Must specify --num_hidden with MLP")
-        if not args.test and not args.comet:
-            logger.warning("Not in test mode and comet disabled. Will not log to Comet")
+        if not args.test and (not args.comet or not args.wandb):
+            logger.warning("Not in test mode and comet & wandb disabled. Waiting 4s before start.")
             import time  # noqa: PLC0415
 
             time.sleep(4)  # give user time to cancel

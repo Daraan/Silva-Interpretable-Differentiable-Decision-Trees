@@ -7,7 +7,11 @@ import numpy as np
 import ray.train
 
 # from ray.rllib import SampleBatch  # input for model
-from ray.rllib.algorithms.ppo.torch.ppo_torch_rl_module import PPOTorchRLModule
+try:
+    from ray.rllib.algorithms.ppo.torch.default_ppo_torch_rl_module import DefaultPPOTorchRLModule
+except ImportError:
+    # Older API
+    from ray.rllib.algorithms.ppo.torch.ppo_torch_rl_module import PPOTorchRLModule as DefaultPPOTorchRLModule  # pyright: ignore[reportPrivateImportUsage]
 from ray.rllib.core.models.base import ACTOR, CRITIC, ENCODER_OUT
 from ray.rllib.core.rl_module.rl_module import RLModuleConfig
 from ray.rllib.utils.deprecation import DEPRECATED_VALUE
@@ -64,7 +68,7 @@ class ModelConfigDict(TypedDict):
     vf_double_output: bool
 
 
-class DDTModule(DiscreteModule, PPOTorchRLModule):
+class DDTModule(DiscreteModule, DefaultPPOTorchRLModule):
     observation_space: gym.Space
     action_space: gym.Space
     config: RLModuleConfig
@@ -139,16 +143,17 @@ class DDTModule(DiscreteModule, PPOTorchRLModule):
             is_value=not self.model_config.get("action_use_softmax", False),
             use_gpu=self.model_config["use_gpu"],
         )
-        self.vf = DDT(
-            input_dim=input_dim,
-            output_dim=1 if not self.model_config["vf_double_output"] else 2,
-            weights=init_weights,
-            comparators=init_comparators,
-            leaves=self.model_config["num_rules"],
-            alpha=1,
-            is_value=True,
-            use_gpu=self.model_config["use_gpu"],
-        )
+        if not self.inference_only:
+            self.vf = DDT(
+                input_dim=input_dim,
+                output_dim=1 if not self.model_config["vf_double_output"] else 2,
+                weights=init_weights,
+                comparators=init_comparators,
+                leaves=self.model_config["num_rules"],
+                alpha=1,
+                is_value=True,
+                use_gpu=self.model_config["use_gpu"],
+            )
 
         self.is_discrete = False
         self._max_inputs = 10
@@ -183,13 +188,15 @@ class DDTModule(DiscreteModule, PPOTorchRLModule):
     def switch_mode(self, *, discrete: bool):
         if discrete and not self.is_discrete:
             self.pi = self.pi.create_discrete_copy()
-            self.vf = self.vf.create_discrete_copy()
             self.pi.eval()
-            self.vf.eval()
+            if not self.inference_only:  # vf is not used in inference and missing in later ray versions
+                self.vf = self.vf.create_discrete_copy()
+                self.vf.eval()
             self.is_discrete = True
         elif not discrete and self.is_discrete:
             self.pi = self.pi
-            self.vf = self.vf
+            if not self.inference_only:
+                self.vf = self.vf
             self.is_discrete = False
 
 
