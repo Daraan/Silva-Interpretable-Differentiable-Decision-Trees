@@ -1,7 +1,7 @@
 from __future__ import annotations
 # pyright: enableExperimentalFeatures=true
 
-from interpretable_ddts.rllib_port.ddt_catalog import DDTCatalog
+from interpretable_ddts.rllib_port.ddt_catalog import DDTPPOCatalog
 from interpretable_ddts.rllib_port.ddt_ppo_module import DDTModule, ModelConfigDict
 from interpretable_ddts.rllib_port.ppo_learner import SilvaLearner
 from ray_utilities.callbacks.algorithm.discrete_eval_callback import DiscreteEvalCallback
@@ -150,7 +150,7 @@ def create_ddt_config(
         observation_space=init_env.observation_space,
         action_space=init_env.action_space,
         model_config=cast("dict[str, Any]", model_config),
-        catalog_class=DDTCatalog,
+        catalog_class=DDTPPOCatalog,
     )
     # module = module_spec.build()
     config.rl_module(

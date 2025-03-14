@@ -28,7 +28,6 @@ class DDT(nn.Module):
         is_value=False,
         use_gpu=False,
     ):
-        super(DDT, self).__init__()
         """
         Initialize the DDT, taking in premade weights for inputs to comparators and sigmoids
         initialized tree.
@@ -41,6 +40,7 @@ class DDT(nn.Module):
         :param is_value: if False, outputs are passed through a Softmax final layer. Default: False
         :param use_gpu: is this a GPU-enabled network? Default: False
         """
+        nn.Module.__init__(self)
         self.use_gpu = use_gpu
         self._depth: int
         if isinstance(leaves, int):
@@ -204,20 +204,24 @@ class DDT(nn.Module):
         labels.requires_grad = True
         self.action_probs = nn.Parameter(labels)
 
-    def forward(self, input_data: torch.Tensor | dict[str, torch.Tensor]) -> torch.Tensor:
-        if isinstance(input_data, dict):
-            input_data = input_data["obs"]  # rllib input
+    def forward(self, inputs: torch.Tensor | dict[str, torch.Tensor], **kwargs) -> torch.Tensor:
+        # Using _forward follows rllib interface
+        return self._forward(inputs, **kwargs)
 
-        input_data = input_data.t().expand(self.layers.size(0), *input_data.t().size())
+    def _forward(self, inputs: torch.Tensor | dict[str, torch.Tensor]) -> torch.Tensor:
+        if isinstance(inputs, dict):
+            inputs = inputs["obs"]  # rllib input
 
-        input_data = input_data.permute(2, 0, 1)
-        comp = self.layers.mul(input_data)
+        inputs = inputs.t().expand(self.layers.size(0), *inputs.t().size())
+
+        inputs = inputs.permute(2, 0, 1)
+        comp = self.layers.mul(inputs)
         comp = comp.sum(dim=2).unsqueeze(-1)
-        comp = comp.sub(self.comparators.expand(input_data.size(0), *self.comparators.size()))
+        comp = comp.sub(self.comparators.expand(inputs.size(0), *self.comparators.size()))
         comp = comp.mul(self.alpha)
         sig_vals: torch.Tensor = self.sig(comp)
 
-        sig_vals = sig_vals.view(input_data.size(0), -1)
+        sig_vals = sig_vals.view(inputs.size(0), -1)
 
         one_minus_sig = torch.ones(sig_vals.size())
         if self.use_gpu:
@@ -228,11 +232,11 @@ class DDT(nn.Module):
         left_path_mask: torch.BoolTensor = self.left_path_sigs.t()  # type: ignore[assignment]
         right_path_mask: torch.BoolTensor = self.right_path_sigs.t()  # type: ignore[assignment]
         left_path_probs = left_path_mask.expand(
-            input_data.size(0),
+            inputs.size(0),
             *left_path_mask.size(),
         ) * sig_vals.unsqueeze(1)
         right_path_probs = right_path_mask.expand(
-            input_data.size(0),
+            inputs.size(0),
             *right_path_mask.size(),
         ) * one_minus_sig.unsqueeze(1)
         left_path_probs = left_path_probs.permute(0, 2, 1)

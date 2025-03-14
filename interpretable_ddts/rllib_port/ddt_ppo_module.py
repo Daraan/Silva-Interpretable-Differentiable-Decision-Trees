@@ -11,7 +11,9 @@ try:
     from ray.rllib.algorithms.ppo.torch.default_ppo_torch_rl_module import DefaultPPOTorchRLModule
 except ImportError:
     # Older API
-    from ray.rllib.algorithms.ppo.torch.ppo_torch_rl_module import PPOTorchRLModule as DefaultPPOTorchRLModule  # pyright: ignore[reportPrivateImportUsage]
+    from ray.rllib.algorithms.ppo.torch.ppo_torch_rl_module import (
+        PPOTorchRLModule as DefaultPPOTorchRLModule,  # pyright: ignore[reportPrivateImportUsage]
+    )
 from ray.rllib.core.models.base import ACTOR, CRITIC, ENCODER_OUT
 from ray.rllib.core.rl_module.rl_module import RLModuleConfig
 from ray.rllib.utils.deprecation import DEPRECATED_VALUE
@@ -19,7 +21,6 @@ from ray.rllib.utils.deprecation import logger as _deprecation_logger
 from typing_extensions import NotRequired, Self
 
 from interpretable_ddts.agents._agent_interface import AgentBase
-from interpretable_ddts.agents.ddt import DDT
 from interpretable_ddts.opt_helpers import ppo_update
 from interpretable_ddts.opt_helpers.replay_buffer import (
     ReplayBufferSingleAgent as SilvaReplayBuffer,
@@ -41,6 +42,7 @@ if TYPE_CHECKING:
     import gymnasium as gym
 
     from interpretable_ddts.agents.ddt import LeafInfo
+    from interpretable_ddts.rllib_port.ddt_catalog import DDTPPOCatalog
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +110,7 @@ class DDTModule(DiscreteModule, DefaultPPOTorchRLModule):
                 model_config=model_config,
                 catalog_class=catalog_class,
             )
+        self.catalog: DDTPPOCatalog
 
     def setup(self) -> None:
         # super().setup() # Might create more modules, e.g. encoder
@@ -115,45 +118,11 @@ class DDTModule(DiscreteModule, DefaultPPOTorchRLModule):
 
         if "bot_name" in self.model_config:
             self.bot_name = self.model_config["bot_name"] + "_"
-        num_rules: int = self.model_config["num_rules"]
-        rule_list: bool = self.model_config["rule_list"]
-        input_dim = self.observation_space.shape[0]  # type: ignore
-        output_dim = int(self.action_space.n)  # type: ignore
-        if rule_list:
-            init_weights, init_comparators, init_leaves = init_rule_list(
-                num_rules,
-                input_dim,
-                output_dim,
-            )
-        else:
-            init_weights = None
-            init_comparators = None
-            init_leaves = num_rules
 
         # Use is_value=True to NOT apply the softmax and return logits
-        self.pi = DDT(
-            input_dim=input_dim,
-            output_dim=output_dim,
-            weights=init_weights,
-            comparators=init_comparators,
-            leaves=init_leaves,
-            alpha=1,
-            # For rllib should return logits
-            # for Silva should return probs
-            is_value=not self.model_config.get("action_use_softmax", False),
-            use_gpu=self.model_config["use_gpu"],
-        )
+        self.pi = self.catalog.build_pi_head(framework=self.framework)
         if not self.inference_only:
-            self.vf = DDT(
-                input_dim=input_dim,
-                output_dim=1 if not self.model_config["vf_double_output"] else 2,
-                weights=init_weights,
-                comparators=init_comparators,
-                leaves=self.model_config["num_rules"],
-                alpha=1,
-                is_value=True,
-                use_gpu=self.model_config["use_gpu"],
-            )
+            self.vf = self.catalog.build_vf_head(framework=self.framework)
 
         self.is_discrete = False
         self._max_inputs = 10
@@ -172,6 +141,7 @@ class DDTModule(DiscreteModule, DefaultPPOTorchRLModule):
         elif not rule_list and (str(num_rules) + "_leaves" not in self.bot_name):
             self.bot_name += str(num_rules) + "_leaves"
 
+    # Normally a class e.g. ActorCriticEncoder
     def encoder(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
         No encoder is used return inputs in an ActorCriticEncoder output form
@@ -186,6 +156,7 @@ class DDTModule(DiscreteModule, DefaultPPOTorchRLModule):
         }
 
     def switch_mode(self, *, discrete: bool):
+        assert self.inference_only == self.config.inference_only
         if discrete and not self.is_discrete:
             self.pi = self.pi.create_discrete_copy()
             self.pi.eval()
@@ -302,6 +273,6 @@ class LegacyDDTModule(DDTModule, AgentBase):
         return loss
 
 
-if TYPE_CHECKING:  # Create ABC errors
+if TYPE_CHECKING:  # Check ABC
     DDTModule()
     LegacyDDTModule()
