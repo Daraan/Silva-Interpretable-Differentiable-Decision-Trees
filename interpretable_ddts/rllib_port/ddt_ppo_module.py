@@ -4,7 +4,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict
 
 import numpy as np
-import ray.train
+import ray.tune
 
 # from ray.rllib import SampleBatch  # input for model
 try:
@@ -266,7 +266,7 @@ class LegacyDDTModule(DDTModule, AgentBase):
         }
         if discrete_reward is not None:
             metrics[DISC_EVAL_METRIC_RETURN_MEAN] = discrete_reward
-        ray.train.report(
+        ray.tune.report(  # ray 2.43.0+
             metrics,
             checkpoint=None,
         )

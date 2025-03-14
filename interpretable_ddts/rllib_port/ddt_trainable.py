@@ -5,9 +5,7 @@ import logging
 import tempfile
 from typing import TYPE_CHECKING, Any, cast
 
-import ray
-import ray.train
-from ray import train
+from ray import tune
 from ray.experimental import tqdm_ray
 from ray.rllib.utils.metrics import (
     ENV_RUNNER_RESULTS,
@@ -92,14 +90,15 @@ def build_and_train(
         if (
             not disable_report
             and (EVALUATION_RESULTS in result and result[EVALUATION_RESULTS].get(EVALUATED_THIS_STEP, False))
-            and ray.train.get_context().get_world_rank() == 0
+            and False
+            # and tune.get_context().get_world_rank() == 0 # deprecated
         ):
             with tempfile.TemporaryDirectory() as tempdir:
                 algo.save_checkpoint(tempdir)
-                train.report(metrics=report_metrics, checkpoint=train.Checkpoint.from_directory(tempdir))
+                tune.report(metrics=report_metrics, checkpoint=tune.Checkpoint.from_directory(tempdir))
         # Report metrics
         elif not disable_report:
-            train.report(report_metrics, checkpoint=None)
+            tune.report(report_metrics, checkpoint=None)
 
         # Update progress bar
         if not is_pbar(pbar):
