@@ -4,14 +4,12 @@ import functools
 import logging
 from argparse import Namespace
 from functools import partial
-from typing import Any, Callable, ClassVar, TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional
 
 from ray.rllib.algorithms.ppo.ppo import PPOConfig
 
-from interpretable_ddts.rllib_port.ddt_trainable import (
-    build_and_train,
-    create_ddt_config,
-)
+from interpretable_ddts.rllib_port.ddt_config import create_ddt_config
+from interpretable_ddts.rllib_port.ddt_trainable import build_and_train
 from ray_utilities.config.experiment_base import (
     DefaultArgumentParser,
     ExperimentSetupBase,
@@ -156,7 +154,7 @@ class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
             wraps_wrapper = functools.wraps(gym_runner.start_process)
         else:
             wraps_wrapper = functools.wraps(build_and_train)
-            trainable = partial(build_and_train, use_pbar=True)
+            trainable = partial(build_and_train, setup_class=self.__class__, use_pbar=True)
         # Wrap decorator for checking
         trainable = verify_return(TrainableReturnData)(trainable)
         trainable = wraps_wrapper(trainable)
