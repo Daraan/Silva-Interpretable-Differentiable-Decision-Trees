@@ -4,6 +4,8 @@ from ray.rllib.core.models.catalog import Catalog
 
 
 class DDTCatalog(Catalog):
+    """Catalog class to create custom model and not a predefined one with unnecessary modules."""
+
     def _determine_components_hook(self) -> None:
         """Hook to determine the components of the model."""
         # We do not need an encoder; no not set _encoder_config, hence do not call super()

@@ -4,7 +4,7 @@ import functools
 import logging
 from argparse import Namespace
 from functools import partial
-from typing import Any, Callable, ClassVar
+from typing import Any, Callable, ClassVar, TYPE_CHECKING, Optional
 
 from ray.rllib.algorithms.ppo.ppo import PPOConfig
 
@@ -84,6 +84,12 @@ class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
         config, _module_spec = create_ddt_config(self.args)
         return config
 
+    @classmethod
+    def config_from_args(cls, args, env_seed: Optional[int] = None):
+        """Similar to create_config but a classmethod"""
+        algo, _module_spec = create_ddt_config(args, env_seed=env_seed)
+        return algo
+
     def postprocess_args(self, args):
         args = super().postprocess_args(args)
         # Set env name
@@ -158,3 +164,8 @@ class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
         return trainable
 
     # endregion
+
+
+if TYPE_CHECKING:
+    # Check ABC interface statically
+    DDTSetup()

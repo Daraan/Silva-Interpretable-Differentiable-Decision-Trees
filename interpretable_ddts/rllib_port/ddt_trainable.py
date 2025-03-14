@@ -20,6 +20,7 @@ from ray.rllib.utils.metrics import (
 )
 from ray.tune import logger as tune_logger
 
+from interpretable_ddts.ddt_setup import DDTSetup
 from interpretable_ddts.rllib_port.ddt_catalog import DDTCatalog
 from interpretable_ddts.rllib_port.ddt_ppo_module import DDTModule, ModelConfigDict
 from interpretable_ddts.rllib_port.ppo_learner import SilvaLearner
@@ -260,7 +261,7 @@ def build_and_train(hparams: dict[str, Any], *, use_pbar=True, disable_report=Fa
     """
     args: dict = hparams["cli_args"]
     # TODO: this should use the parameters from the search space
-    config, _ = create_ddt_config(args, env_seed=hparams.get("env_seed"))
+    config = DDTSetup.create_config_from_args(args, env_seed=hparams.get("env_seed"))
     try:
         algo = cast("PPO", config.build_algo())  # pyright: ignore[reportAttributeAccessIssue]
     except AttributeError:
