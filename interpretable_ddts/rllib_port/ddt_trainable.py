@@ -47,7 +47,9 @@ def build_and_train(
     config = setup_class.config_from_args(args, env_seed=hparams.get("env_seed"))
     try:
         algo = cast("PPO", config.build_algo())  # pyright: ignore[reportAttributeAccessIssue]
-    except AttributeError:
+    except AttributeError as e:
+        if "build_ago" not in str(e):
+            raise
         # Older API
         algo = cast("PPO", config.build())  # pyright: ignore[reportAttributeAccessIssue]
 

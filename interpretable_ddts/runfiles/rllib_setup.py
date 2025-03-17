@@ -18,7 +18,7 @@ def test_mode_func(trainable: FunctionalTrainable, setup: DDTSetup):
     # Trainable is build_and_train but not with disabled report
     from interpretable_ddts.rllib_port import build_and_train
 
-    return build_and_train(setup.param_space, disable_report=True)
+    return build_and_train(setup.param_space, setup_class=type(setup), disable_report=True)
 
 
 if __name__ == "__main__":

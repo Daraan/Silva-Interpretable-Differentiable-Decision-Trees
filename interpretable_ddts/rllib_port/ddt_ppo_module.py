@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional, TypedDict
+from typing import TYPE_CHECKING, Any, Optional, TypedDict
 
 import numpy as np
 import ray.tune
+from ray.rllib.core.models.configs import RecurrentEncoderConfig
+from ray.rllib.core.rl_module.rl_module import RLModuleConfig
+from ray.rllib.utils.deprecation import DEPRECATED_VALUE
+from ray.rllib.utils.deprecation import logger as _deprecation_logger
 
 # from ray.rllib import SampleBatch  # input for model
 try:
@@ -14,10 +18,6 @@ except ImportError:
     from ray.rllib.algorithms.ppo.torch.ppo_torch_rl_module import (
         PPOTorchRLModule as DefaultPPOTorchRLModule,  # pyright: ignore[reportPrivateImportUsage]
     )
-from ray.rllib.core.models.base import ACTOR, CRITIC, ENCODER_OUT
-from ray.rllib.core.rl_module.rl_module import RLModuleConfig
-from ray.rllib.utils.deprecation import DEPRECATED_VALUE
-from ray.rllib.utils.deprecation import logger as _deprecation_logger
 from typing_extensions import NotRequired, Self
 
 from interpretable_ddts.agents._agent_interface import AgentBase
@@ -29,7 +29,8 @@ from ray_utilities.constants import (
     DISC_EVAL_METRIC_RETURN_MEAN,
     EVAL_METRIC_RETURN_MEAN,
 )
-from ray_utilities.typing.discrete_module import DiscreteModule
+from ray_utilities.typing.discrete_module import DiscretePPOModule
+from interpretable_ddts.rllib_port.ddt_catalog import DDTPPOCatalog
 
 # This suppresses a deprecation warning from RLModuleConfig
 __old_level = _deprecation_logger.getEffectiveLevel()
@@ -42,7 +43,6 @@ if TYPE_CHECKING:
     import gymnasium as gym
 
     from interpretable_ddts.agents.ddt import LeafInfo
-    from interpretable_ddts.rllib_port.ddt_catalog import DDTPPOCatalog
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,8 @@ class ModelConfigDict(TypedDict):
     vf_double_output: bool
 
 
-class DDTModule(DiscreteModule, DefaultPPOTorchRLModule):
+class DDTModule(DefaultPPOTorchRLModule, DiscretePPOModule):
+    # NOTE: DiscretePPOModule needs to be last currently! Also AttributeError in torch
     observation_space: gym.Space
     action_space: gym.Space
     config: RLModuleConfig
@@ -91,6 +92,8 @@ class DDTModule(DiscreteModule, DefaultPPOTorchRLModule):
         model_config: Optional[dict[str, Any] | ModelConfigDict] = None,
         catalog_class=None,
     ) -> None:
+        if catalog_class is None:
+            catalog_class = DDTPPOCatalog
         if config and config != DEPRECATED_VALUE:  # type: ignore[comparison-overlap]
             super().__init__(
                 config,
@@ -116,59 +119,27 @@ class DDTModule(DiscreteModule, DefaultPPOTorchRLModule):
         # super().setup() # Might create more modules, e.g. encoder
         assert isinstance(self.model_config, dict)
 
-        if "bot_name" in self.model_config:
-            self.bot_name = self.model_config["bot_name"] + "_"
+        # region parent code
+        is_stateful = isinstance(
+            self.catalog.actor_critic_encoder_config.base_encoder_config,
+            RecurrentEncoderConfig,
+        )
+        if is_stateful:
+            self.inference_only = False
 
+        # Can not replace this with super().setup() as it would create more modules
+        self.encoder = self.catalog.build_actor_critic_encoder(framework=self.framework)
         # Use is_value=True to NOT apply the softmax and return logits
         self.pi = self.catalog.build_pi_head(framework=self.framework)
-        if not self.inference_only:
+        if not self.inference_only:  # Not in parent code
             self.vf = self.catalog.build_vf_head(framework=self.framework)
+        # endregion
 
+        # New code:
+        if "bot_name" in self.model_config:
+            self.bot_name = self.model_config["bot_name"] + "_"
         self.is_discrete = False
         self._max_inputs = 10
-        self._setup_name()
-
-    def _setup_name(self):
-        assert isinstance(self.model_config, dict)
-
-        if "bot_name" not in self.model_config:
-            return
-        self.bot_name = self.model_config["bot_name"] + "_"
-        num_rules: int = self.model_config["num_rules"]
-        rule_list: bool = self.model_config["rule_list"]
-        if rule_list and (str(num_rules) + "_rules" not in self.bot_name):
-            self.bot_name += str(num_rules) + "_rules"
-        elif not rule_list and (str(num_rules) + "_leaves" not in self.bot_name):
-            self.bot_name += str(num_rules) + "_leaves"
-
-    # Normally a class e.g. ActorCriticEncoder
-    def encoder(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        No encoder is used return inputs in an ActorCriticEncoder output form
-        to be passed to the action(pi) and value(vf) networks
-        """
-        return {
-            ENCODER_OUT: {
-                ACTOR: inputs,
-                # Add critic from value network
-                **({} if self.config.inference_only else {CRITIC: inputs}),
-            },
-        }
-
-    def switch_mode(self, *, discrete: bool):
-        assert self.inference_only == self.config.inference_only
-        if discrete and not self.is_discrete:
-            self.pi = self.pi.create_discrete_copy()
-            self.pi.eval()
-            if not self.inference_only:  # vf is not used in inference and missing in later ray versions
-                self.vf = self.vf.create_discrete_copy()
-                self.vf.eval()
-            self.is_discrete = True
-        elif not discrete and self.is_discrete:
-            self.pi = self.pi
-            if not self.inference_only:
-                self.vf = self.vf
-            self.is_discrete = False
 
 
 class LegacyDDTModule(DDTModule, AgentBase):
@@ -176,8 +147,6 @@ class LegacyDDTModule(DDTModule, AgentBase):
     Version of the DDTModule that is used by gym_runner.py
     it is compatible with the AgentBase interface
     """
-
-    bot_name: str  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @property
     def action_network(self):  # pyright: ignore[reportIncompatibleVariableOverride]
@@ -200,6 +169,7 @@ class LegacyDDTModule(DDTModule, AgentBase):
 
     def setup(self, *, duplicate=False) -> None:
         super().setup()
+        self._setup_name()
         assert self.bot_name
 
         self.rewards_file = None
@@ -212,6 +182,19 @@ class LegacyDDTModule(DDTModule, AgentBase):
 
         self.ppo = ppo_update.PPO([self.action_network, self.value_network], two_nets=True, use_gpu=False)
         self.num_steps = 0
+
+    def _setup_name(self):
+        assert isinstance(self.model_config, dict)
+
+        if "bot_name" not in self.model_config:
+            return
+        self.bot_name = self.model_config["bot_name"] + "_"
+        num_rules: int = self.model_config["num_rules"]
+        rule_list: bool = self.model_config["rule_list"]
+        if rule_list and (str(num_rules) + "_rules" not in self.bot_name):
+            self.bot_name += str(num_rules) + "_rules"
+        elif not rule_list and (str(num_rules) + "_leaves" not in self.bot_name):
+            self.bot_name += str(num_rules) + "_leaves"
 
     def _write_hparams(self):
         pass

@@ -9,6 +9,8 @@ from ray.rllib.core.models.torch.base import TorchModel
 
 from interpretable_ddts.agents.ddt import DDT
 from interpretable_ddts.agents.ddt_agent import init_rule_list
+from ray_utilities.dummy_encoder import DummyActorCriticEncoder, DummyActorCriticEncoderConfig
+from ray_utilities.typing.discrete_module import DiscreteModelBase
 
 if TYPE_CHECKING:
     import gymnasium as gym
@@ -35,7 +37,7 @@ class DDTCatalog(Catalog):
         )
 
 
-class DDTModel(DDT, TorchModel):
+class DDTModel(DDT, DiscreteModelBase, TorchModel):
     """Compatible with rays Model interface. Expect not having a config"""
 
     def __init__(
@@ -85,6 +87,7 @@ class DDTPPOCatalog(PPOCatalog):
             action_space: The action space for the Pi Head.
             model_config_dict: The model config to use.
         """
+        # Skip PPOCatalog init
         super(PPOCatalog, self).__init__(
             observation_space=observation_space,
             action_space=action_space,
@@ -93,7 +96,7 @@ class DDTPPOCatalog(PPOCatalog):
         """This is a dict union of these two"""
 
         # PPOCatalog code
-        self.actor_critic_encoder_config = None
+        self.actor_critic_encoder_config = DummyActorCriticEncoderConfig()
         # TODO: Infer from num_rules
         self.pi_and_vf_head_hiddens = self._model_config_dict["head_fcnet_hiddens"]
         self.pi_and_vf_head_activation = self._model_config_dict["head_fcnet_activation"]
@@ -127,8 +130,8 @@ class DDTPPOCatalog(PPOCatalog):
             self._init_comparators = None
             self._init_leaves = num_rules
 
-    def build_actor_critic_encoder(self, framework: str):
-        raise ValueError("DDT Uses no Encoder")
+    def build_actor_critic_encoder(self, framework: str) -> DummyActorCriticEncoder:
+        return self.actor_critic_encoder_config.build(framework)
 
     def build_pi_head(self, framework: str):
         assert framework == "torch"
