@@ -6,17 +6,17 @@ from argparse import Namespace
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional
 
-from ray.rllib.algorithms.ppo.ppo import PPOConfig
-
 from interpretable_ddts.rllib_port.ddt_config import create_ddt_config
 from interpretable_ddts.rllib_port.ddt_trainable import build_and_train
 from ray_utilities.config.experiment_base import (
     DefaultArgumentParser,
     ExperimentSetupBase,
 )
-from ray_utilities.environment import create_env
 from ray_utilities.postprocessing import verify_return
 from ray_utilities.typing.trainable_return import TrainableReturnData
+
+if TYPE_CHECKING:
+    from ray.rllib.algorithms.ppo.ppo import PPOConfig, PPO
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class DDTArgumentParser(DefaultArgumentParser):
         self.add_argument("-rl", "--rule_list")
 
 
-class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
+class DDTSetup(ExperimentSetupBase[DDTArgumentParser, "PPOConfig", "PPO"]):
     # region Argument Parsing
 
     default_extra_tags: ClassVar[list[str]] = [
@@ -90,17 +90,13 @@ class DDTSetup(ExperimentSetupBase[PPOConfig, DDTArgumentParser]):
 
     def postprocess_args(self, args):
         args = super().postprocess_args(args)
-        # Set env name
-        init_env = create_env(args.env_type)
-        env_name = init_env.unwrapped.spec.id  # pyright: ignore[reportOptionalMemberAccess]
-        args.env_type = env_name
         # Assertions
         assert args.agent_type == "ddt", f"Only DDT is supported, got {args.agent_type}"
         if args.agent_type == "ddt" and args.num_hidden:
             raise ValueError("Do not use --num_hidden with DDT")
         if args.agent_type == "mlp" and args.num_hidden:  # type: ignore[comparison-overlap]
             raise ValueError("Must specify --num_hidden with MLP")
-        if not args.test and (not args.comet or not args.wandb):
+        if not args.test and (not args.comet and not args.wandb):
             logger.warning("Not in test mode and comet & wandb disabled. Waiting 4s before start.")
             import time  # noqa: PLC0415
 

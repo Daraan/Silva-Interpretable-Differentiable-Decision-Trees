@@ -6,14 +6,13 @@ import tempfile
 from typing import TYPE_CHECKING, Any, cast
 
 from ray import tune
-from ray.experimental import tqdm_ray
 from ray.rllib.utils.metrics import (
     ENV_RUNNER_RESULTS,
     EPISODE_RETURN_MEAN,
     EVALUATION_RESULTS,
 )
 
-from ray_utilities import is_pbar
+from ray_utilities import episode_iterator, is_pbar
 from ray_utilities.callbacks.progress_bar import update_pbar
 from ray_utilities.constants import EVALUATED_THIS_STEP
 from ray_utilities.postprocessing import (
@@ -53,10 +52,6 @@ def build_and_train(
         # Older API
         algo = cast("PPO", config.build())  # pyright: ignore[reportAttributeAccessIssue]
 
-    if use_pbar:
-        pbar = tqdm_ray.tqdm(range(args["episodes"]), position=hparams.get("process_number", None))
-    else:
-        pbar = range(args["episodes"])
     running_reward_updater = create_running_reward_updater()
     running_eval_reward_updater = create_running_reward_updater()
     running_disc_eval_reward_updater = create_running_reward_updater()
@@ -65,6 +60,7 @@ def build_and_train(
     metrics: TrainableReturnData | LogMetricsDict = {}  # type: ignore[assignment]
     disc_eval_mean = None
     disc_running_eval_reward = None
+    pbar = episode_iterator(args, hparams, use_pbar=use_pbar)
     for _episode in pbar:
         # Train and get results
         result = cast("StrictAlgorithmReturnData", algo.train())

@@ -104,6 +104,10 @@ exclude = [
     "env10"
 ]
 
+[tool.ruff.lint.pyflakes]
+# Avoid F401 error when Generic is not detected
+extend-generics = ["ray_utilities.config.experiment_base.ExperimentSetupBase"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["interpretable_ddts", "ray_utilities"]
 force-single-line = false  # default: false

@@ -25,12 +25,12 @@ from interpretable_ddts.opt_helpers import ppo_update
 from interpretable_ddts.opt_helpers.replay_buffer import (
     ReplayBufferSingleAgent as SilvaReplayBuffer,
 )
+from interpretable_ddts.rllib_port.ddt_catalog import DDTPPOCatalog
 from ray_utilities.constants import (
     DISC_EVAL_METRIC_RETURN_MEAN,
     EVAL_METRIC_RETURN_MEAN,
 )
-from ray_utilities.typing.discrete_module import DiscretePPOModule
-from interpretable_ddts.rllib_port.ddt_catalog import DDTPPOCatalog
+from ray_utilities.typing.discrete_module import DiscreteTorchPPOModule
 
 # This suppresses a deprecation warning from RLModuleConfig
 __old_level = _deprecation_logger.getEffectiveLevel()
@@ -60,7 +60,7 @@ def init_rule_list(num_rules, dim_in, dim_out):
     return weights, comparators, leaves
 
 
-class ModelConfigDict(TypedDict):
+class DDTModelConfigDict(TypedDict):
     bot_name: NotRequired[str]
     num_rules: int
     rule_list: bool
@@ -70,12 +70,12 @@ class ModelConfigDict(TypedDict):
     vf_double_output: bool
 
 
-class DDTModule(DefaultPPOTorchRLModule, DiscretePPOModule):
+class DDTModule(DefaultPPOTorchRLModule, DiscreteTorchPPOModule):
     # NOTE: DiscretePPOModule needs to be last currently! Also AttributeError in torch
     observation_space: gym.Space
     action_space: gym.Space
     config: RLModuleConfig
-    model_config: Optional[ModelConfigDict]
+    model_config: Optional[DDTModelConfigDict]
 
     CAN_USE_DISCRETE_EVAL = True
 
@@ -89,7 +89,7 @@ class DDTModule(DefaultPPOTorchRLModule, DiscretePPOModule):
         action_space: Optional[gym.Space] = None,
         inference_only: Optional[bool] = None,
         learner_only: bool = False,
-        model_config: Optional[dict[str, Any] | ModelConfigDict] = None,
+        model_config: Optional[dict[str, Any] | DDTModelConfigDict] = None,
         catalog_class=None,
     ) -> None:
         if catalog_class is None:

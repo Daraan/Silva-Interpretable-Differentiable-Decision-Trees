@@ -6,20 +6,22 @@ from typing import TYPE_CHECKING, Any, cast
 from ray.rllib.algorithms.ppo.ppo_catalog import PPOCatalog
 from ray.rllib.core.models.catalog import Catalog
 from ray.rllib.core.models.torch.base import TorchModel
+from typing_extensions import deprecated
 
 from interpretable_ddts.agents.ddt import DDT
 from interpretable_ddts.agents.ddt_agent import init_rule_list
 from ray_utilities.dummy_encoder import DummyActorCriticEncoder, DummyActorCriticEncoderConfig
-from ray_utilities.typing.discrete_module import DiscreteModelBase
+from ray_utilities.typing.discrete_module import DiscreteModelABC
 
 if TYPE_CHECKING:
     import gymnasium as gym
     from ray.rllib.core.rl_module.default_model_config import DefaultModelConfig  # noqa: F401
 
     from interpretable_ddts.agents.ddt_agent import LeafInfo
-    from interpretable_ddts.rllib_port.ddt_ppo_module import ModelConfigDict
+    from interpretable_ddts.rllib_port.ddt_ppo_module import DDTModelConfigDict
 
 
+@deprecated("Use DDTPPOCatalog instead")
 class DDTCatalog(Catalog):
     """Catalog class to create custom model and not a predefined one with unnecessary modules."""
 
@@ -37,7 +39,7 @@ class DDTCatalog(Catalog):
         )
 
 
-class DDTModel(DDT, DiscreteModelBase, TorchModel):
+class DDTModel(DDT, DiscreteModelABC, TorchModel):
     """Compatible with rays Model interface. Expect not having a config"""
 
     def __init__(
@@ -78,7 +80,7 @@ class DDTPPOCatalog(PPOCatalog):
         self,
         observation_space: gym.Space,
         action_space: gym.Space,
-        model_config_dict: ModelConfigDict,
+        model_config_dict: DDTModelConfigDict,
     ):
         """Initializes the PPOCatalog.
 
