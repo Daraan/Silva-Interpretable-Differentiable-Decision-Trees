@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 # Import comet before torch to allow monkey patching.
-from ray_utilities import run_tune  # fmt: skip
+from ray_utilities import default_trainable, run_tune  # fmt: skip
 
 from interpretable_ddts import DDTSetup
 
@@ -16,9 +16,8 @@ def test_mode_func(trainable: FunctionalTrainable, setup: DDTSetup):
         # this is a partial of gym_runner.run_process with param_space already set to the second argument
         return trainable({})
     # Trainable is build_and_train but not with disabled report
-    from interpretable_ddts.rllib_port import build_and_train
 
-    return build_and_train(setup.param_space, setup_class=type(setup), disable_report=True)
+    return default_trainable(setup.param_space, setup_class=type(setup), disable_report=True)
 
 
 if __name__ == "__main__":
