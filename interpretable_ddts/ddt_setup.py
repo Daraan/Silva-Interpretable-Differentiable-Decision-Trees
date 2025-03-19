@@ -7,7 +7,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional
 
 from interpretable_ddts.rllib_port.ddt_config import create_ddt_config
-from ray_utilities import default_trainable
+from ray_utilities import create_default_trainable
 from ray_utilities.config.experiment_base import (
     DefaultArgumentParser,
     ExperimentSetupBase,
@@ -148,14 +148,12 @@ class DDTSetup(ExperimentSetupBase[DDTArgumentParser, "PPOConfig", "PPO"]):
                 use_rllib_output=True,
             )
             wraps_wrapper = functools.wraps(gym_runner.start_process)
-        else:
-            wraps_wrapper = functools.wraps(default_trainable)
-            trainable = partial(default_trainable, setup_class=self.__class__, use_pbar=True)
-        # Wrap decorator for checking
-        trainable = verify_return(TrainableReturnData)(trainable)
-        trainable = wraps_wrapper(trainable)
+            # Wrap decorator for checking
+            trainable = verify_return(TrainableReturnData)(trainable)
+            trainable = wraps_wrapper(trainable)
+            return trainable
         # trainable._progress_metrics = CLI_REPORTER_PARAMETER_COLUMNS  # type: ignore[attr-defined]
-        return trainable
+        return create_default_trainable(setup_class=self.__class__, use_pbar=True, discrete_eval=True)
 
     # endregion
 
