@@ -17,7 +17,7 @@ def test_mode_func(trainable: FunctionalTrainable, setup: DDTSetup):
         return trainable({})
     # Trainable is build_and_train but not with disabled report
 
-    return default_trainable(setup.param_space, setup_class=type(setup), disable_report=True, discrete_eval=True)
+    return trainable(setup.param_space)
 
 
 if __name__ == "__main__":
