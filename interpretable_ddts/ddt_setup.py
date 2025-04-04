@@ -16,7 +16,7 @@ from ray_utilities.postprocessing import verify_return
 from ray_utilities.typing.trainable_return import TrainableReturnData
 
 if TYPE_CHECKING:
-    from ray.rllib.algorithms.ppo.ppo import PPOConfig, PPO
+    from ray.rllib.algorithms.ppo.ppo import PPO, PPOConfig
 
 logger = logging.getLogger(__name__)
 
@@ -60,16 +60,6 @@ class DDTSetup(ExperimentSetupBase[DDTArgumentParser, "PPOConfig", "PPO"]):
     ]
 
     PROJECT: str = "DDT-Silva"
-
-    @property
-    def project_name(self) -> str:
-        """Name for the output folder, wandb project, and comet workspace."""
-        return "dev-workspace" if self.args.test else self.PROJECT
-
-    @project_name.setter
-    def project_name(self, value: str):
-        logger.warning("Setting project name to %s. Prefer creation of a new class", value)
-        self.PROJECT = value
 
     @property
     def group_name(self) -> str:

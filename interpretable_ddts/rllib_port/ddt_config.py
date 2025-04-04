@@ -79,5 +79,8 @@ def create_ddt_config(
                 # "use_silva_loss": True,
             },
         )
-        config.evaluation(custom_evaluation_function=None)
+        config.evaluation(
+            custom_evaluation_function=None,
+            evaluation_num_env_runners=1 if args["parallel"] else 0,  # NOTE: Parallel evaluation not implemented
+        )
     return config, module_spec

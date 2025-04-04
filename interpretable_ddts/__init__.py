@@ -1,12 +1,8 @@
-import logging
-
-from ray_utilities import utilities_handler
+from ray_utilities.nice_logging import nicer_logging
 
 from .ddt_setup import DDTSetup
 
-logger = logging.getLogger(__name__)
-if not logger.hasHandlers():
-    logger.setLevel(logging.INFO)
-    logger.addHandler(utilities_handler)
+logger = nicer_logging(__name__, "INFO")
+
 
 __all__ = ["DDTSetup"]
