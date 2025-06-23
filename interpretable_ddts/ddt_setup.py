@@ -4,15 +4,14 @@ import functools
 import logging
 from argparse import Namespace
 from functools import partial
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
 from interpretable_ddts.rllib_port.ddt_config import create_ddt_config
 from ray_utilities import create_default_trainable
-from ray_utilities.config.experiment_base import (
-    DefaultArgumentParser,
-    ExperimentSetupBase,
-)
+from ray_utilities.config import DefaultArgumentParser, add_callbacks_to_config
 from ray_utilities.postprocessing import verify_return
+from ray_utilities.setup import ExperimentSetupBase
+from ray_utilities.setup.extensions import SetupWithDynamicBuffer
 from ray_utilities.typing.trainable_return import TrainableReturnData
 
 if TYPE_CHECKING:
@@ -48,7 +47,10 @@ class DDTArgumentParser(DefaultArgumentParser):
         self.add_argument("-rl", "--rule_list")
 
 
-class DDTSetup(ExperimentSetupBase[DDTArgumentParser, "PPOConfig", "PPO"]):
+class DDTSetup(
+    SetupWithDynamicBuffer[DDTArgumentParser, "PPOConfig", "PPO"],
+    ExperimentSetupBase[DDTArgumentParser, "PPOConfig", "PPO"],
+):
     # region Argument Parsing
 
     default_extra_tags: ClassVar[list[str]] = [
@@ -73,10 +75,11 @@ class DDTSetup(ExperimentSetupBase[DDTArgumentParser, "PPOConfig", "PPO"]):
         return config
 
     @classmethod
-    def config_from_args(cls, args, env_seed: Optional[int] = None):
+    def _config_from_args(cls, args):
         """Similar to create_config but a classmethod"""
-        algo, _module_spec = create_ddt_config(args, env_seed=env_seed)
-        return algo
+        config, _module_spec = create_ddt_config(args)
+        add_callbacks_to_config(config, cls._get_callbacks_from_args(args))
+        return config
 
     def postprocess_args(self, args):
         args = super().postprocess_args(args)
@@ -128,7 +131,7 @@ class DDTSetup(ExperimentSetupBase[DDTArgumentParser, "PPOConfig", "PPO"]):
                     test=self.args.test,
                     num_hidden=self.args.num_hidden,
                     use_pbar=tqdm_ray.tqdm,
-                    episodes=self.args.episodes,
+                    episodes=self.args.iterations,
                     # Note: cast to int as it might be an np.int type
                     dim_in=int(module_spec.observation_space.shape[0]),  # noqa: E501 # pyright: ignore[reportOptionalSubscript, reportOptionalMemberAccess]
                     dim_out=int(module_spec.action_space.n),  # type: ignore[attr-defined],
