@@ -6,6 +6,8 @@ from argparse import Namespace
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
+from ray.rllib.algorithms.ppo.ppo import PPO, PPOConfig
+
 from interpretable_ddts.rllib_port.ddt_config import create_ddt_config
 from ray_utilities import create_default_trainable
 from ray_utilities.config import DefaultArgumentParser, add_callbacks_to_config
@@ -13,9 +15,6 @@ from ray_utilities.postprocessing import verify_return
 from ray_utilities.setup import ExperimentSetupBase
 from ray_utilities.setup.extensions import SetupWithDynamicBuffer
 from ray_utilities.typing.trainable_return import TrainableReturnData
-
-if TYPE_CHECKING:
-    from ray.rllib.algorithms.ppo.ppo import PPO, PPOConfig
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +61,8 @@ class DDTSetup(
     ]
 
     PROJECT: str = "DDT-Silva"
+    config_class = PPOConfig
+    algo_class = PPO
 
     @property
     def group_name(self) -> str:

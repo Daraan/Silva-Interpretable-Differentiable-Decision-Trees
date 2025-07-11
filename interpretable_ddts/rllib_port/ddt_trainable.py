@@ -14,7 +14,7 @@ from ray.rllib.utils.metrics import (
 
 from ray_utilities.callbacks.progress_bar import update_pbar
 from ray_utilities.constants import EVALUATED_THIS_STEP
-from ray_utilities.default_trainable import episode_iterator
+from ray_utilities.training.helpers import episode_iterator
 from ray_utilities.misc import is_pbar
 from ray_utilities.postprocessing import (
     create_log_metrics,

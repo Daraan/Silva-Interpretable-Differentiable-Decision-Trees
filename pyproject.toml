@@ -119,7 +119,7 @@ include_trailing_comma = true
 profile = "black"
 
 [tool.pyright]
-extraPaths = ["ray_utilities/"]
+extraPaths = ["submodule_ray_utilities/"]
 reportDeprecated = "warning"
 reportUnnecessaryComparison = "warning"
 reportUnnecessaryCast = "warning"

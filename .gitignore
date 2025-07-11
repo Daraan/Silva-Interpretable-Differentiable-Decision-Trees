@@ -5,6 +5,7 @@ interpretable_ddts/models_recreation
 interpretable_ddts/txts_first
 interpretable_ddts/outputs/
 temp_dir/
+outputs/
 models/
 txts/
 */*/tree.png
